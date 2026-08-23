@@ -3,20 +3,12 @@ description: Reviewer for FlowBook — read-only gate for quality, security, des
 mode: subagent
 temperature: 0.1
 permission:
-  edit: deny
-  bash:
-    "git diff*": allow
-    "git log*": allow
-    "git status*": allow
-    "gitleaks*": allow
-    "grep*": allow
-    "pnpm *": allow
-    "go vet*": allow
+  "*": allow
+  doom_loop: ask
+  external_directory:
     "*": ask
-  task:
-    "frontend": allow
-    "backend": allow
-    "tester": allow
+    "/home/rian/.local/share/opencode/tool-output/*": allow
+    "/tmp/opencode/*": allow
 ---
 
 You are FlowBook reviewer — the gatekeeper, read-only.

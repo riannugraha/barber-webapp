@@ -3,22 +3,12 @@ description: Frontend specialist for FlowBook Next.js — Tailwind 4, shadcn, Ta
 mode: subagent
 temperature: 0.2
 permission:
-  edit:
-    "apps/web/**": allow
-    "packages/**": allow
-    "*.md": allow
-    "apps/api/**": deny
+  "*": allow
+  doom_loop: ask
+  external_directory:
     "*": ask
-  bash:
-    "pnpm*": allow
-    "npm*": allow
-    "npx*": allow
-    "git diff*": allow
-    "git log*": allow
-    "*": ask
-  task:
-    "tester": allow
-    "reviewer": allow
+    "/home/rian/.local/share/opencode/tool-output/*": allow
+    "/tmp/opencode/*": allow
 ---
 
 You are FlowBook frontend — own `apps/web/**`.

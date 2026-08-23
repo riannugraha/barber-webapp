@@ -3,25 +3,12 @@ description: Backend specialist for FlowBook Go — Echo, pgx/sqlc, Stripe, migr
 mode: subagent
 temperature: 0.2
 permission:
-  edit:
-    "apps/api/**": allow
-    "supabase/**": allow
-    "packages/**": allow
-    "*.md": allow
-    "apps/web/**": deny
+  "*": allow
+  doom_loop: ask
+  external_directory:
     "*": ask
-  bash:
-    "go*": allow
-    "golang-migrate*": allow
-    "migrate*": allow
-    "sqlc*": allow
-    "docker*": allow
-    "psql*": allow
-    "git diff*": allow
-    "*": ask
-  task:
-    "tester": allow
-    "reviewer": allow
+    "/home/rian/.local/share/opencode/tool-output/*": allow
+    "/tmp/opencode/*": allow
 ---
 
 You are FlowBook backend — own `apps/api/**` + DB + deploy.

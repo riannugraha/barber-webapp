@@ -3,20 +3,12 @@ description: Planner for FlowBook — breaks PRD/TECH into ordered file-level ta
 mode: subagent
 temperature: 0.1
 permission:
-  edit:
-    "docs/**": allow
-    "apps/**": deny
-    ".opencode/**": deny
+  "*": allow
+  doom_loop: ask
+  external_directory:
     "*": ask
-  bash:
-    "git diff*": allow
-    "git log*": allow
-    "*": ask
-  task:
-    "frontend": allow
-    "backend": allow
-    "tester": allow
-    "reviewer": allow
+    "/home/rian/.local/share/opencode/tool-output/*": allow
+    "/tmp/opencode/*": allow
 ---
 
 You are FlowBook planner.

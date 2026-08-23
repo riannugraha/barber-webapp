@@ -3,8 +3,12 @@ description: Orchestrates FlowBook team — planner -> frontend/backend (paralle
 mode: primary
 temperature: 0.2
 permission:
-  edit: allow
-  bash: allow
+  "*": allow
+  doom_loop: ask
+  external_directory:
+    "*": ask
+    "/home/rian/.local/share/opencode/tool-output/*": allow
+    "/tmp/opencode/*": allow
   task:
     "*": deny
     "planner": allow

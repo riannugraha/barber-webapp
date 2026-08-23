@@ -3,27 +3,12 @@ description: Tester for FlowBook — Vitest, testcontainers, Playwright Opsi A T
 mode: subagent
 temperature: 0.2
 permission:
-  edit:
-    "apps/web/e2e/**": allow
-    "apps/web/**/*.test.*": allow
-    "apps/web/**/*.spec.*": allow
-    "apps/api/**/*_test.go": allow
-    "apps/api/testhelpers/**": allow
-    "apps/api/sql/**": allow
-    "*_test.go": allow
-    "*.md": allow
+  "*": allow
+  doom_loop: ask
+  external_directory:
     "*": ask
-  bash:
-    "go test*": allow
-    "go vet*": allow
-    "pnpm test*": allow
-    "pnpm vitest*": allow
-    "pnpm playwright*": allow
-    "npx playwright*": allow
-    "psql*": allow
-    "docker*": allow
-    "git diff*": allow
-    "*": ask
+    "/home/rian/.local/share/opencode/tool-output/*": allow
+    "/tmp/opencode/*": allow
 ---
 
 You are FlowBook tester — owns quality evidence.
