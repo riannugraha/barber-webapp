@@ -1,0 +1,77 @@
+# Secrets — never commit (public repo)
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.key
+*.pem
+*.p12
+*.pfx
+secrets/
+
+# pnpm / turbo / Next.js
+node_modules/
+.pnp/
+.pnp.js
+.turbo/
+.next/
+out/
+dist/
+build/
+.next/cache/
+.turbo/cache/
+
+# Go
+apps/api/bin/
+apps/api/tmp/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+vendor/
+
+# Supabase
+.supabase/
+supabase/.branches/
+supabase/.temp/
+
+# Vercel / Koyeb / Docker
+.vercel
+.koyeb
+.docker/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+*.swp
+*.swo
+*~
+
+# Test / Coverage
+coverage/
+.nyc_output/
+playwright-report/
+test-results/
+blob-report/
+playwright/.cache/
+junit.xml
+
+# Env local overrides
+apps/*/.env
+apps/*/.env.local
+apps/*/.env.*.local
+
+# Gitleaks
+.gitleaks/

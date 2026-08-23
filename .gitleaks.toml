@@ -1,0 +1,21 @@
+title = "FlowBook gitleaks config"
+
+[allowlist]
+  description = "placeholder docs"
+  paths = [
+    '''\.gitleaksignore''',
+    '''\.env\.example''',
+    '''docs/.*\.md''',
+    '''README\.md''',
+  ]
+  regexes = [
+    '''sk_test_\.\.\.''',
+    '''whsec_\.\.\.''',
+    '''re_\.\.\.''',
+    '''\[anon-key\]''',
+    '''\[service-role-key\]''',
+    '''\[ref\]''',
+    '''flowbook-api-xxx''',
+    '''openssl rand''',
+    '''random-32''',
+  ]

@@ -1,0 +1,15 @@
+# Allowlist untuk contoh placeholder di docs dan .env.example
+# gitleaks akan skip pattern ini
+
+# placeholder di docs
+sk_test_...
+whsec_...
+re_...
+[anon-key]
+[service-role-key]
+postgres://postgres.[ref]
+https://[ref].supabase.co
+https://flowbook-api-xxx.koyeb.app
+[openssl rand -hex 32]
+[random-32-char-for-qa-only]
+[random-32-for-qa-only]

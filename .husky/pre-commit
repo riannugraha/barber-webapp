@@ -1,0 +1,21 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+# Public repo guard — block commit jika ada secret atau .env ter-staged
+if git diff --cached --name-only | grep -qE '^\.env(\..*)?$|^apps/.*/\.env'; then
+  echo "❌ Blocked: .env file staged — jangan commit secret (public repo)"
+  echo "   staged files:"
+  git diff --cached --name-only | grep -E '\.env'
+  exit 1
+fi
+
+# gitleaks jika ter-install (pnpm dlx gitleaks)
+if command -v gitleaks >/dev/null 2>&1; then
+  gitleaks protect --staged --no-banner --redact --config .gitleaks.toml 2>/dev/null || gitleaks protect --staged --no-banner --redact 2>/dev/null
+  if [ $? -ne 0 ]; then
+    echo "❌ gitleaks menemukan potensi secret di staged files"
+    exit 1
+  fi
+else
+  echo "ℹ️  gitleaks tidak ter-install — skip scan (install: go install github.com/gitleaks/gitleaks/v8@latest)"
+fi
