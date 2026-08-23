@@ -1,0 +1,1219 @@
+openapi: 3.0.3
+info:
+  title: FlowBook API
+  description: |
+    FlowBook — Booking & Scheduling Platform API.
+    Go Echo + pgx + sqlc + Supabase pooler 6543.
+    Store UTC (timestamptz), render in organization.timezone (default Asia/Jakarta).
+    Calendar engine cached 30s, EXCLUDE anti double-book.
+  version: 1.0.0
+  contact:
+    name: FlowBook
+    url: https://flowbook.example.com
+servers:
+  - url: https://flowbook-api-xxx.koyeb.app/api/v1
+    description: Production (Koyeb)
+  - url: http://localhost:8080/api/v1
+    description: Local
+tags:
+  - name: Health
+  - name: Auth
+  - name: Services
+  - name: Staff
+  - name: Availability
+  - name: Bookings
+  - name: Payments
+  - name: Dashboard
+  - name: Realtime
+security: []
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Health check (Koyeb)
+      operationId: healthCheck
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, db]
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  db:
+                    type: string
+                    example: up
+                  version:
+                    type: string
+                    example: 1.0.0
+
+  /openapi.yaml:
+    get:
+      tags: [Health]
+      summary: Serve OpenAPI spec
+      operationId: getOpenAPI
+      responses:
+        '200':
+          description: YAML spec
+          content:
+            text/yaml:
+              schema:
+                type: string
+
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Register new user
+      operationId: authRegister
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '409':
+          description: Email already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Login — returns access 15m + sets httpOnly refresh 7d
+      operationId: authLogin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: OK
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+                example: refresh_token=xxx; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=604800
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Refresh access token via httpOnly cookie
+      operationId: authRefresh
+      responses:
+        '200':
+          description: New access token
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [accessToken]
+                properties:
+                  accessToken:
+                    type: string
+                  expiresAt:
+                    type: string
+                    format: date-time
+        '401':
+          description: Invalid or expired refresh token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Logout — revoke refresh token
+      operationId: authLogout
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: No content
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /services:
+    get:
+      tags: [Services]
+      summary: List active services (public)
+      operationId: listServices
+      parameters:
+        - in: query
+          name: organizationId
+          schema:
+            type: string
+            format: uuid
+          description: Filter by org (optional, defaults to request org)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Service'
+    post:
+      tags: [Services]
+      summary: Create service (OWNER)
+      operationId: createService
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateServiceRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Service'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /services/{id}:
+    get:
+      tags: [Services]
+      summary: Get service by ID
+      operationId: getService
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Service'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Services]
+      summary: Update service (OWNER)
+      operationId: updateService
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateServiceRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Service'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    delete:
+      tags: [Services]
+      summary: Delete service (OWNER)
+      operationId: deleteService
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '204':
+          description: Deleted
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /staff:
+    get:
+      tags: [Staff]
+      summary: List staff (public, filtered by service if provided)
+      operationId: listStaff
+      parameters:
+        - in: query
+          name: serviceId
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: organizationId
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Staff'
+    post:
+      tags: [Staff]
+      summary: Create staff (OWNER)
+      operationId: createStaff
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateStaffRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Staff'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /staff/{id}:
+    get:
+      tags: [Staff]
+      summary: Get staff detail + services + availability
+      operationId: getStaff
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Staff'
+                  - type: object
+                    properties:
+                      services:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Service'
+                      availability:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Availability'
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /availability/slots:
+    get:
+      tags: [Availability]
+      summary: Get available slots for a date (timezone-aware, cached 30s)
+      operationId: getAvailabilitySlots
+      parameters:
+        - in: query
+          name: serviceId
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Service determines duration+buffer
+        - in: query
+          name: staffId
+          schema:
+            type: string
+            format: uuid
+          description: Optional — if omitted returns all eligible staff slots
+        - in: query
+          name: date
+          required: true
+          schema:
+            type: string
+            format: date
+            example: '2026-08-24'
+        - in: query
+          name: tz
+          schema:
+            type: string
+            default: Asia/Jakarta
+            example: Asia/Jakarta
+          description: IANA timezone — server converts from UTC
+      responses:
+        '200':
+          description: Slots
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [date, tz, slots]
+                properties:
+                  date:
+                    type: string
+                    format: date
+                  tz:
+                    type: string
+                  slots:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Slot'
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /bookings:
+    get:
+      tags: [Bookings]
+      summary: List bookings (OWNER/STAFF filtered, CUSTOMER via email)
+      operationId: listBookings
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: from
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: to
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [PENDING, CONFIRMED, CANCELLED, COMPLETED, NO_SHOW]
+        - in: query
+          name: staffId
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+      responses:
+        '200':
+          description: Paginated bookings
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Booking'
+                  meta:
+                    $ref: '#/components/schemas/PaginationMeta'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Bookings]
+      summary: Create booking (public or authenticated)
+      operationId: createBooking
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBookingRequest'
+      responses:
+        '201':
+          description: Created — may be PENDING (needs payment) or CONFIRMED (free)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+        '409':
+          description: Slot overlapping — EXCLUDE violation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: conflict
+                message: Slot already taken for this staff
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /bookings/{id}:
+    get:
+      tags: [Bookings]
+      summary: Get booking detail
+      operationId: getBooking
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /bookings/{id}/cancel:
+    post:
+      tags: [Bookings]
+      summary: Cancel booking
+      operationId: cancelBooking
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          description: Cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /bookings/{id}/reschedule:
+    post:
+      tags: [Bookings]
+      summary: Reschedule booking to new slot
+      operationId: rescheduleBooking
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [staffId, startAt]
+              properties:
+                staffId:
+                  type: string
+                  format: uuid
+                startAt:
+                  type: string
+                  format: date-time
+                  description: Desired start in ISO8601 UTC
+      responses:
+        '200':
+          description: Rescheduled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+        '409':
+          description: Slot conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /payments/checkout-session:
+    post:
+      tags: [Payments]
+      summary: Create Stripe checkout session for a booking
+      operationId: createCheckoutSession
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [bookingId]
+              properties:
+                bookingId:
+                  type: string
+                  format: uuid
+                successUrl:
+                  type: string
+                  format: uri
+                cancelUrl:
+                  type: string
+                  format: uri
+      responses:
+        '200':
+          description: Checkout session created
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [url, sessionId]
+                properties:
+                  url:
+                    type: string
+                    format: uri
+                  sessionId:
+                    type: string
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /payments/webhook:
+    post:
+      tags: [Payments]
+      summary: Stripe webhook — idempotent via stripeEventId unique
+      operationId: stripeWebhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Event processed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  received:
+                    type: boolean
+        '400':
+          description: Invalid signature
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /dashboard:
+    get:
+      tags: [Dashboard]
+      summary: Dashboard aggregates — revenue, bookings, occupancy (OWNER)
+      operationId: getDashboard
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: from
+          schema:
+            type: string
+            format: date
+            example: '2025-11-01'
+        - in: query
+          name: to
+          schema:
+            type: string
+            format: date
+            example: '2026-08-24'
+        - in: query
+          name: granularity
+          schema:
+            type: string
+            enum: [day, week, month]
+            default: month
+        - in: query
+          name: tz
+          schema:
+            type: string
+            default: Asia/Jakarta
+      responses:
+        '200':
+          description: Aggregated dashboard data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardResponse'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /ws:
+    get:
+      tags: [Realtime]
+      summary: WebSocket upgrade — subscribes to org slot_taken broadcast
+      operationId: wsUpgrade
+      parameters:
+        - in: query
+          name: orgId
+          schema:
+            type: string
+            format: uuid
+          required: true
+      responses:
+        '101':
+          description: Switching Protocols
+
+  /test/reset:
+    post:
+      tags: [Health]
+      summary: "Test only — TRUNCATE + seedMinimal (requires APP_ENV=test + x-test-secret)"
+      operationId: testReset
+      parameters:
+        - in: header
+          name: x-test-secret
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Reset done
+        '401':
+          description: Unauthorized — wrong secret or not in test env
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Not in test env
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /test/seed-full:
+    post:
+      tags: [Health]
+      summary: "Test only — seed ~1.5k bookings for chart tests"
+      operationId: testSeedFull
+      parameters:
+        - in: header
+          name: x-test-secret
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Seeded
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: "Access token 15m - Authorization Bearer token"
+
+  parameters:
+    IdPath:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: Forbidden — role insufficient
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ValidationError:
+      description: Validation error (422 Zod-compatible)
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error, details]
+            properties:
+              error:
+                type: string
+                example: validation_error
+              message:
+                type: string
+                example: Validation failed
+              details:
+                type: array
+                items:
+                  type: object
+                  required: [field, message]
+                  properties:
+                    field:
+                      type: string
+                      example: email
+                    message:
+                      type: string
+                      example: Invalid email
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+
+    PaginationMeta:
+      type: object
+      required: [page, limit, total, totalPages]
+      properties:
+        page:
+          type: integer
+        limit:
+          type: integer
+        total:
+          type: integer
+        totalPages:
+          type: integer
+
+    RegisterRequest:
+      type: object
+      required: [email, password, name]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+        name:
+          type: string
+          minLength: 2
+        role:
+          type: string
+          enum: [OWNER, STAFF, CUSTOMER]
+          default: CUSTOMER
+        organizationId:
+          type: string
+          format: uuid
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+
+    AuthResponse:
+      type: object
+      required: [accessToken, user]
+      properties:
+        accessToken:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+        user:
+          $ref: '#/components/schemas/User'
+
+    User:
+      type: object
+      required: [id, email, name, role]
+      properties:
+        id:
+          type: string
+          format: uuid
+        organizationId:
+          type: string
+          format: uuid
+          nullable: true
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        role:
+          type: string
+          enum: [OWNER, STAFF, CUSTOMER]
+        createdAt:
+          type: string
+          format: date-time
+
+    Service:
+      type: object
+      required: [id, organizationId, name, durationMinutes, priceCents]
+      properties:
+        id:
+          type: string
+          format: uuid
+        organizationId:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: Classic Cut
+        description:
+          type: string
+          nullable: true
+        durationMinutes:
+          type: integer
+          example: 30
+        bufferMinutes:
+          type: integer
+          example: 10
+        priceCents:
+          type: integer
+          example: 85000
+        color:
+          type: string
+          example: '#7c3aed'
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateServiceRequest:
+      type: object
+      required: [name, durationMinutes, priceCents]
+      properties:
+        name:
+          type: string
+          minLength: 2
+        description:
+          type: string
+        durationMinutes:
+          type: integer
+          minimum: 5
+          maximum: 480
+        bufferMinutes:
+          type: integer
+          minimum: 0
+          default: 10
+        priceCents:
+          type: integer
+          minimum: 0
+        color:
+          type: string
+        isActive:
+          type: boolean
+          default: true
+
+    Staff:
+      type: object
+      required: [id, organizationId, name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        organizationId:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+          nullable: true
+        name:
+          type: string
+          example: Andi
+        email:
+          type: string
+          format: email
+          nullable: true
+        avatarUrl:
+          type: string
+          format: uri
+          nullable: true
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+
+    CreateStaffRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        avatarUrl:
+          type: string
+          format: uri
+        serviceIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        availability:
+          type: array
+          items:
+            $ref: '#/components/schemas/AvailabilityInput'
+
+    Availability:
+      type: object
+      required: [id, staffId, dayOfWeek, startTime, endTime]
+      properties:
+        id:
+          type: string
+          format: uuid
+        staffId:
+          type: string
+          format: uuid
+        dayOfWeek:
+          type: integer
+          minimum: 0
+          maximum: 6
+          description: 0=Sunday ... 6=Saturday
+        startTime:
+          type: string
+          example: '09:00'
+        endTime:
+          type: string
+          example: '17:00'
+
+    AvailabilityInput:
+      type: object
+      required: [dayOfWeek, startTime, endTime]
+      properties:
+        dayOfWeek:
+          type: integer
+          minimum: 0
+          maximum: 6
+        startTime:
+          type: string
+        endTime:
+          type: string
+
+    Slot:
+      type: object
+      required: [startAt, endAt, available]
+      properties:
+        startAt:
+          type: string
+          format: date-time
+          description: UTC
+        endAt:
+          type: string
+          format: date-time
+        available:
+          type: boolean
+        staffId:
+          type: string
+          format: uuid
+        staffName:
+          type: string
+        reason:
+          type: string
+          nullable: true
+          example: buffer
+
+    Booking:
+      type: object
+      required: [id, organizationId, serviceId, staffId, customerName, customerEmail, startAt, endAt, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        organizationId:
+          type: string
+          format: uuid
+        serviceId:
+          type: string
+          format: uuid
+        staffId:
+          type: string
+          format: uuid
+        customerId:
+          type: string
+          format: uuid
+          nullable: true
+        customerName:
+          type: string
+        customerEmail:
+          type: string
+          format: email
+        customerPhone:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        startAt:
+          type: string
+          format: date-time
+        endAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [PENDING, CONFIRMED, CANCELLED, COMPLETED, NO_SHOW]
+        paymentStatus:
+          type: string
+          enum: [UNPAID, PAID, REFUNDED]
+        stripeSessionId:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateBookingRequest:
+      type: object
+      required: [serviceId, staffId, startAt, customerName, customerEmail]
+      properties:
+        organizationId:
+          type: string
+          format: uuid
+        serviceId:
+          type: string
+          format: uuid
+        staffId:
+          type: string
+          format: uuid
+        startAt:
+          type: string
+          format: date-time
+          description: ISO8601 UTC — end computed via service duration+buffer
+        customerName:
+          type: string
+          minLength: 2
+        customerEmail:
+          type: string
+          format: email
+        customerPhone:
+          type: string
+        notes:
+          type: string
+
+    DashboardResponse:
+      type: object
+      required: [kpi, revenueSeries]
+      properties:
+        kpi:
+          type: object
+          required: [totalBookings, confirmedBookings, totalRevenueCents, avgTicketCents, occupancyPct]
+          properties:
+            totalBookings:
+              type: integer
+            confirmedBookings:
+              type: integer
+            cancelledBookings:
+              type: integer
+            totalRevenueCents:
+              type: integer
+            avgTicketCents:
+              type: integer
+            occupancyPct:
+              type: number
+        revenueSeries:
+          type: array
+          items:
+            type: object
+            required: [period, revenueCents, bookingsCount]
+            properties:
+              period:
+                type: string
+                format: date-time
+              revenueCents:
+                type: integer
+              bookingsCount:
+                type: integer
+        topServices:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+              name:
+                type: string
+              bookingsCount:
+                type: integer
+              revenueCents:
+                type: integer
+        bookingsByStaff:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+              name:
+                type: string
+              bookingsCount:
+                type: integer
+        bookingsByHour:
+          type: array
+          items:
+            type: object
+            properties:
+              hour:
+                type: integer
+              bookingsCount:
+                type: integer
+        topCustomers:
+          type: array
+          items:
+            type: object
+            properties:
+              customerEmail:
+                type: string
+              customerName:
+                type: string
+              bookingsCount:
+                type: integer
+        recentBookings:
+          type: array
+          items:
+            $ref: '#/components/schemas/Booking'
