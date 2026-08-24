@@ -75,3 +75,4 @@ apps/*/.env.*.local
 
 # Gitleaks
 .gitleaks/
+*.tsbuildinfo
