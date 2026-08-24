@@ -85,12 +85,13 @@ CREATE INDEX idx_staff_services_service_id ON staff_services(service_id);
 -- =========================
 -- availability (weekly template)
 -- =========================
+-- Note: end_time may be <= start_time to represent overnight (e.g. 21:00->02:00 next day). Engine handles cross-midnight.
 CREATE TABLE availability (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     staff_id UUID NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
     day_of_week INT NOT NULL CHECK (day_of_week BETWEEN 0 AND 6),
     start_time TIME NOT NULL,
-    end_time TIME NOT NULL CHECK (end_time > start_time),
+    end_time TIME NOT NULL CHECK (end_time != start_time),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (staff_id, day_of_week, start_time)
 );
@@ -99,6 +100,7 @@ CREATE INDEX idx_availability_staff_id ON availability(staff_id);
 -- =========================
 -- availability_overrides (specific date overrides / libur)
 -- =========================
+-- Overnight allowed: end_time may be <= start_time meaning next day (21:00->02:00). is_closed overrides all.
 CREATE TABLE availability_overrides (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     staff_id UUID NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
@@ -110,7 +112,7 @@ CREATE TABLE availability_overrides (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (staff_id, date),
     CHECK (
-        (is_closed = true) OR (start_time IS NOT NULL AND end_time IS NOT NULL AND end_time > start_time)
+        (is_closed = true) OR (start_time IS NOT NULL AND end_time IS NOT NULL AND end_time != start_time)
     )
 );
 CREATE INDEX idx_availability_overrides_staff_date ON availability_overrides(staff_id, date);
