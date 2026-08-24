@@ -59,9 +59,10 @@ const fallbackDashboard: DashboardResponse = {
       for (let h = 7; h <= 21; h++) {
         const idx = h - 7;
         const weekendBoost = dow >= 5 ? 4 : 0;
-        const jitter = Math.floor(Math.random() * 4);
+        const jitter = (dow * 13 + idx * 7) % 4;
         arr.push({ dow, hour: h, count: Math.max(1, base[idx] + weekendBoost + jitter - 2) });
       }
+    }
     }
     // Ensure busiest jam Sabtu 10-11 tinggi
     return arr;

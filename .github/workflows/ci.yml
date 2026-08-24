@@ -35,6 +35,7 @@ jobs:
       DATABASE_URL: ${{ secrets.QA_DATABASE_URL }}
       TEST_SECRET: ${{ secrets.TEST_SECRET }}
       APP_ENV: test
+      TESTCONTAINERS_RYUK_DISABLED: "true"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5

@@ -74,7 +74,7 @@ export function Heatmap({ data, isLoading }: Props) {
                 {DAYS.map((_, colIdx) => {
                   // colIdx 0=>dow 1, ...6=>dow0
                   const dow = colIdx === 6 ? 0 : colIdx + 1;
-                  const count = map.get(`${dow}-${h}`) ?? (hasHeatmap ? 0 : Math.floor(Math.random() * 18) + 2);
+                  const count = map.get(`${dow}-${h}`) ?? (hasHeatmap ? 0 : ((dow * 7 + h * 13) % 18) + 2);
                   const intensity = Math.min(1, count / max);
                   // violet 260 with opacity
                   const bg = `oklch(0.62 0.19 260 / ${0.08 + intensity * 0.85})`;
