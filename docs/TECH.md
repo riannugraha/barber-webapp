@@ -188,13 +188,14 @@ Vercel AI SDK tidak dipakai di Next (karena Go), SSE manual di Echo.
 ## 11. Env
 
 ```
-# web .env (Vercel)
+# web .env (Vercel) — new keys
 NEXT_PUBLIC_API_URL=https://flowbook-api-xxx.koyeb.app/api/v1
 NEXT_PUBLIC_SUPABASE_URL=... (hanya jika pakai storage direct)
-NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_... # legacy: NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
 
 # api .env (Koyeb Secrets)
 DATABASE_URL=postgres://postgres.xxx:5432?pgbouncer=true  # pooler 6543
+SUPABASE_SECRET_KEY=sb_secret_... # legacy: SUPABASE_SERVICE_ROLE_KEY=eyJ..., server only (bypasses RLS), for Storage/admin if needed
 JWT_SECRET=openssl rand -hex 32
 REFRESH_SECRET=...
 STRIPE_SECRET_KEY=sk_test_...

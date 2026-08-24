@@ -24,10 +24,10 @@ GitHub -> Vercel (apps/web) -> preview + prod
 1. supabase.com → New Project `flowbook-qa` region SG, save DB password
 2. New Project `flowbook-prod` region SG
 
-Untuk tiap project, ambil dari **Settings → API**:
-- `Project URL`
-- `anon key`
-- `service_role` key
+Untuk tiap project, ambil dari **Settings → API Keys** (new keys) — tab **Publishable and secret** (legacy di tab **Legacy**):
+- `Project URL` (`https://[ref].supabase.co`)
+- `Publishable key` (`sb_publishable_...`, legacy: `anon` `eyJ...`)
+- `Secret key` (`sb_secret_...`, legacy: `service_role` `eyJ...`, bypasses RLS — server only)
 
 Dan dari **Database → Connection string** (pooler):
 ```
@@ -98,13 +98,13 @@ Cold start Eco ~250ms — first request setelah idle lambat 1s.
 ```
 NEXT_PUBLIC_API_URL=https://flowbook-api-qa-xxx.koyeb.app/api/v1
 NEXT_PUBLIC_SUPABASE_URL=https://xxx-qa.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_... # legacy: NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
 ```
 **Production:**
 ```
 NEXT_PUBLIC_API_URL=https://flowbook-api-xxx.koyeb.app/api/v1
 NEXT_PUBLIC_SUPABASE_URL=https://xxx-prod.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_... # legacy: NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
 ```
 
 ### 5.3 Deployment Protection Bypass (untuk Playwright CI)

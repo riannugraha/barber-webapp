@@ -8,20 +8,24 @@ import (
 
 // Config holds environment-driven configuration for FlowBook API.
 // Supabase pooler 6543 is used via DATABASE_URL (pgbouncer=true).
+// Supabase new keys: SUPABASE_SECRET_KEY (sb_secret_..., legacy service_role) and SUPABASE_PUBLISHABLE_KEY (sb_publishable_..., legacy anon)
 type Config struct {
-	Port                string
-	DatabaseURL         string
-	JWTSecret           string
-	RefreshSecret       string
-	AppEnv              string
-	TestSecret          string
-	AllowedOrigins      []string
-	StripeSecretKey     string
-	StripeWebhookSecret string
-	ResendAPIKey        string
-	ResendFromEmail     string
-	FrontendURL         string
-	OpenAIAPIKey        string
+	Port                     string
+	DatabaseURL              string
+	SupabaseSecretKey        string
+	SupabasePublishableKey   string
+	SupabaseURL              string
+	JWTSecret                string
+	RefreshSecret            string
+	AppEnv                   string
+	TestSecret               string
+	AllowedOrigins           []string
+	StripeSecretKey          string
+	StripeWebhookSecret      string
+	ResendAPIKey             string
+	ResendFromEmail          string
+	FrontendURL              string
+	OpenAIAPIKey             string
 }
 
 // Load reads environment variables and returns Config with defaults.
@@ -42,6 +46,32 @@ func Load() Config {
 		appEnv = "development"
 	}
 	testSecret := os.Getenv("TEST_SECRET")
+
+	// Supabase new keys (publishable sb_publishable_..., secret sb_secret_...) with legacy fallback
+	supabaseSecret := os.Getenv("SUPABASE_SECRET_KEY")
+	if supabaseSecret == "" {
+		supabaseSecret = os.Getenv("SUPABASE_SERVICE_ROLE_KEY")
+		if supabaseSecret != "" {
+			slog.Warn("SUPABASE_SERVICE_ROLE_KEY is legacy — use SUPABASE_SECRET_KEY (sb_secret_...)")
+		}
+	}
+	supabasePublishable := os.Getenv("SUPABASE_PUBLISHABLE_KEY")
+	if supabasePublishable == "" {
+		supabasePublishable = os.Getenv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY")
+		if supabasePublishable == "" {
+			supabasePublishable = os.Getenv("SUPABASE_ANON_KEY")
+			if supabasePublishable == "" {
+				supabasePublishable = os.Getenv("NEXT_PUBLIC_SUPABASE_ANON_KEY")
+				if supabasePublishable != "" {
+					slog.Warn("SUPABASE_ANON_KEY is legacy — use SUPABASE_PUBLISHABLE_KEY (sb_publishable_...)")
+				}
+			}
+		}
+	}
+	supabaseURL := os.Getenv("SUPABASE_URL")
+	if supabaseURL == "" {
+		supabaseURL = os.Getenv("NEXT_PUBLIC_SUPABASE_URL")
+	}
 
 	allowedOriginsEnv := os.Getenv("ALLOWED_ORIGINS")
 	var allowedOrigins []string
@@ -80,19 +110,22 @@ func Load() Config {
 	openAIKey := os.Getenv("OPENAI_API_KEY")
 
 	cfg := Config{
-		Port:                port,
-		DatabaseURL:         os.Getenv("DATABASE_URL"),
-		JWTSecret:           jwtSecret,
-		RefreshSecret:       refreshSecret,
-		AppEnv:              appEnv,
-		TestSecret:          testSecret,
-		AllowedOrigins:      allowedOrigins,
-		StripeSecretKey:     stripeKey,
-		StripeWebhookSecret: stripeWebhook,
-		ResendAPIKey:        resendKey,
-		ResendFromEmail:     resendFrom,
-		FrontendURL:         frontendURL,
-		OpenAIAPIKey:        openAIKey,
+		Port:                     port,
+		DatabaseURL:              os.Getenv("DATABASE_URL"),
+		SupabaseSecretKey:        supabaseSecret,
+		SupabasePublishableKey:   supabasePublishable,
+		SupabaseURL:              supabaseURL,
+		JWTSecret:                jwtSecret,
+		RefreshSecret:            refreshSecret,
+		AppEnv:                   appEnv,
+		TestSecret:               testSecret,
+		AllowedOrigins:           allowedOrigins,
+		StripeSecretKey:          stripeKey,
+		StripeWebhookSecret:      stripeWebhook,
+		ResendAPIKey:             resendKey,
+		ResendFromEmail:          resendFrom,
+		FrontendURL:              frontendURL,
+		OpenAIAPIKey:             openAIKey,
 	}
 
 	if cfg.JWTSecret == "" && cfg.AppEnv != "test" {
