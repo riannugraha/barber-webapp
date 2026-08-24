@@ -13,11 +13,13 @@ import (
 
 	"flowbook/api/internal/auth"
 	"flowbook/api/internal/availability"
+	"flowbook/api/internal/bookings"
 	"flowbook/api/internal/config"
 	"flowbook/api/internal/db"
 	"flowbook/api/internal/health"
 	appmw "flowbook/api/internal/middleware"
 	"flowbook/api/internal/testhelpers"
+	"flowbook/api/internal/ws"
 )
 
 func main() {
@@ -105,16 +107,34 @@ func main() {
 		slog.Warn("auth disabled — JWT_SECRET not set")
 	}
 
+	// WS Hub — gorilla/websocket native (Koyeb, no Pusher) for slot_taken broadcast (T04/T08)
+	wsHub := ws.NewHub()
+	wsHandler := ws.NewHandler(wsHub)
+	wsHandler.RegisterRoutes(v1)
+	slog.Info("ws hub registered", "transport", "gorilla/websocket", "path", "/api/v1/ws")
+
 	// Availability engine — calendar core (T03) cached 30s, pgx pooler 6543, no database/sql
+	var availSvc *availability.Service
 	if pool != nil {
 		queries := db.New(pool)
 		availRepo := availability.NewRepository(queries)
-		availSvc := availability.NewService(availRepo)
+		availSvc = availability.NewService(availRepo)
 		availHandler := availability.NewHandler(availSvc)
 		availHandler.RegisterRoutes(v1)
 		slog.Info("availability engine registered", "cache", "30s", "pooler", "6543")
 	} else {
 		slog.Warn("availability engine disabled — no DB pool")
+	}
+
+	// Bookings Core — T04: POST /bookings validasi via GetSlots, tstzrange, 409 23P01, pagination, cancel/reschedule tx, RBAC, hub.Broadcast
+	if pool != nil {
+		bookingsRepo := bookings.NewRepository(pool)
+		bookingsSvc := bookings.NewService(bookingsRepo, availSvc, wsHub)
+		bookingsHandler := bookings.NewHandler(bookingsSvc)
+		bookingsHandler.RegisterRoutes(v1, cfg.JWTSecret)
+		slog.Info("bookings core registered", "routes", "POST /bookings, GET /bookings, GET /bookings/:id, POST /bookings/:id/cancel, POST /bookings/:id/reschedule", "ws", "slot_taken")
+	} else {
+		slog.Warn("bookings core disabled — no DB pool")
 	}
 
 	// Test-only helpers — POST /test/reset + /test/seed-full guard APP_ENV=test && x-test-secret==TEST_SECRET (T07)
