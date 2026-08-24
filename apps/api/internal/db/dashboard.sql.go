@@ -15,12 +15,13 @@ import (
 
 const dashboardBookingsByHour = `-- name: DashboardBookingsByHour :many
 SELECT
-    EXTRACT(HOUR FROM start_at)::int AS hour,
+    EXTRACT(HOUR FROM (b.start_at AT TIME ZONE $4::text))::int AS hour,
     COUNT(*)::bigint AS bookings_count
 FROM bookings b
 WHERE b.organization_id = $1
   AND b.start_at BETWEEN $2 AND $3
   AND b.status IN ('CONFIRMED','COMPLETED')
+  AND ($5::uuid = '00000000-0000-0000-0000-000000000000'::uuid OR b.staff_id = $5)
 GROUP BY 1
 ORDER BY 1 ASC
 `
@@ -29,6 +30,8 @@ type DashboardBookingsByHourParams struct {
 	OrganizationID uuid.UUID `db:"organization_id" json:"organization_id"`
 	StartAt        time.Time `db:"start_at" json:"start_at"`
 	StartAt_2      time.Time `db:"start_at_2" json:"start_at_2"`
+	Column4        string    `db:"column_4" json:"column_4"`
+	Column5        uuid.UUID `db:"column_5" json:"column_5"`
 }
 
 type DashboardBookingsByHourRow struct {
@@ -37,7 +40,13 @@ type DashboardBookingsByHourRow struct {
 }
 
 func (q *Queries) DashboardBookingsByHour(ctx context.Context, arg DashboardBookingsByHourParams) ([]DashboardBookingsByHourRow, error) {
-	rows, err := q.db.Query(ctx, dashboardBookingsByHour, arg.OrganizationID, arg.StartAt, arg.StartAt_2)
+	rows, err := q.db.Query(ctx, dashboardBookingsByHour,
+		arg.OrganizationID,
+		arg.StartAt,
+		arg.StartAt_2,
+		arg.Column4,
+		arg.Column5,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -68,6 +77,7 @@ JOIN services s ON s.id = b.service_id
 WHERE b.organization_id = $1
   AND b.start_at BETWEEN $2 AND $3
   AND b.status IN ('CONFIRMED','COMPLETED')
+  AND ($4::uuid = '00000000-0000-0000-0000-000000000000'::uuid OR b.staff_id = $4)
 GROUP BY st.id, st.name
 ORDER BY bookings_count DESC
 `
@@ -76,6 +86,7 @@ type DashboardBookingsByStaffParams struct {
 	OrganizationID uuid.UUID `db:"organization_id" json:"organization_id"`
 	StartAt        time.Time `db:"start_at" json:"start_at"`
 	StartAt_2      time.Time `db:"start_at_2" json:"start_at_2"`
+	Column4        uuid.UUID `db:"column_4" json:"column_4"`
 }
 
 type DashboardBookingsByStaffRow struct {
@@ -86,7 +97,12 @@ type DashboardBookingsByStaffRow struct {
 }
 
 func (q *Queries) DashboardBookingsByStaff(ctx context.Context, arg DashboardBookingsByStaffParams) ([]DashboardBookingsByStaffRow, error) {
-	rows, err := q.db.Query(ctx, dashboardBookingsByStaff, arg.OrganizationID, arg.StartAt, arg.StartAt_2)
+	rows, err := q.db.Query(ctx, dashboardBookingsByStaff,
+		arg.OrganizationID,
+		arg.StartAt,
+		arg.StartAt_2,
+		arg.Column4,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -110,6 +126,131 @@ func (q *Queries) DashboardBookingsByStaff(ctx context.Context, arg DashboardBoo
 	return items, nil
 }
 
+const dashboardBusiestMonth = `-- name: DashboardBusiestMonth :one
+SELECT
+    date_trunc('month', (b.start_at AT TIME ZONE $4::text))::date AS month,
+    COUNT(*)::bigint AS bookings_count,
+    SUM(s.price_cents)::bigint AS revenue_cents
+FROM bookings b
+JOIN services s ON s.id = b.service_id
+WHERE b.organization_id = $1
+  AND b.start_at BETWEEN $2 AND $3
+  AND b.status IN ('CONFIRMED','COMPLETED')
+  AND ($5::uuid = '00000000-0000-0000-0000-000000000000'::uuid OR b.staff_id = $5)
+GROUP BY 1
+ORDER BY bookings_count DESC
+LIMIT 1
+`
+
+type DashboardBusiestMonthParams struct {
+	OrganizationID uuid.UUID `db:"organization_id" json:"organization_id"`
+	StartAt        time.Time `db:"start_at" json:"start_at"`
+	StartAt_2      time.Time `db:"start_at_2" json:"start_at_2"`
+	Column4        string    `db:"column_4" json:"column_4"`
+	Column5        uuid.UUID `db:"column_5" json:"column_5"`
+}
+
+type DashboardBusiestMonthRow struct {
+	Month         time.Time `db:"month" json:"month"`
+	BookingsCount int64     `db:"bookings_count" json:"bookings_count"`
+	RevenueCents  int64     `db:"revenue_cents" json:"revenue_cents"`
+}
+
+func (q *Queries) DashboardBusiestMonth(ctx context.Context, arg DashboardBusiestMonthParams) (DashboardBusiestMonthRow, error) {
+	row := q.db.QueryRow(ctx, dashboardBusiestMonth,
+		arg.OrganizationID,
+		arg.StartAt,
+		arg.StartAt_2,
+		arg.Column4,
+		arg.Column5,
+	)
+	var i DashboardBusiestMonthRow
+	err := row.Scan(&i.Month, &i.BookingsCount, &i.RevenueCents)
+	return i, err
+}
+
+const dashboardCancelRate = `-- name: DashboardCancelRate :one
+SELECT
+    COUNT(*) FILTER (WHERE status = 'CANCELLED')::float / NULLIF(COUNT(*),0)::float * 100 AS cancel_rate_pct
+FROM bookings
+WHERE organization_id = $1
+  AND start_at BETWEEN $2 AND $3
+  AND ($4::uuid = '00000000-0000-0000-0000-000000000000'::uuid OR staff_id = $4)
+`
+
+type DashboardCancelRateParams struct {
+	OrganizationID uuid.UUID `db:"organization_id" json:"organization_id"`
+	StartAt        time.Time `db:"start_at" json:"start_at"`
+	StartAt_2      time.Time `db:"start_at_2" json:"start_at_2"`
+	Column4        uuid.UUID `db:"column_4" json:"column_4"`
+}
+
+func (q *Queries) DashboardCancelRate(ctx context.Context, arg DashboardCancelRateParams) (int32, error) {
+	row := q.db.QueryRow(ctx, dashboardCancelRate,
+		arg.OrganizationID,
+		arg.StartAt,
+		arg.StartAt_2,
+		arg.Column4,
+	)
+	var cancel_rate_pct int32
+	err := row.Scan(&cancel_rate_pct)
+	return cancel_rate_pct, err
+}
+
+const dashboardHeatmap = `-- name: DashboardHeatmap :many
+SELECT
+    EXTRACT(DOW FROM (b.start_at AT TIME ZONE $4::text))::int AS dow,
+    EXTRACT(HOUR FROM (b.start_at AT TIME ZONE $4::text))::int AS hour,
+    COUNT(*)::bigint AS bookings_count
+FROM bookings b
+WHERE b.organization_id = $1
+  AND b.start_at BETWEEN $2 AND $3
+  AND b.status IN ('CONFIRMED','COMPLETED')
+  AND ($5::uuid = '00000000-0000-0000-0000-000000000000'::uuid OR b.staff_id = $5)
+GROUP BY 1, 2
+ORDER BY 1, 2 ASC
+`
+
+type DashboardHeatmapParams struct {
+	OrganizationID uuid.UUID `db:"organization_id" json:"organization_id"`
+	StartAt        time.Time `db:"start_at" json:"start_at"`
+	StartAt_2      time.Time `db:"start_at_2" json:"start_at_2"`
+	Column4        string    `db:"column_4" json:"column_4"`
+	Column5        uuid.UUID `db:"column_5" json:"column_5"`
+}
+
+type DashboardHeatmapRow struct {
+	Dow           int32 `db:"dow" json:"dow"`
+	Hour          int32 `db:"hour" json:"hour"`
+	BookingsCount int64 `db:"bookings_count" json:"bookings_count"`
+}
+
+func (q *Queries) DashboardHeatmap(ctx context.Context, arg DashboardHeatmapParams) ([]DashboardHeatmapRow, error) {
+	rows, err := q.db.Query(ctx, dashboardHeatmap,
+		arg.OrganizationID,
+		arg.StartAt,
+		arg.StartAt_2,
+		arg.Column4,
+		arg.Column5,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DashboardHeatmapRow
+	for rows.Next() {
+		var i DashboardHeatmapRow
+		if err := rows.Scan(&i.Dow, &i.Hour, &i.BookingsCount); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const dashboardKPI = `-- name: DashboardKPI :one
 SELECT
     COUNT(*)::bigint AS total_bookings,
@@ -121,12 +262,14 @@ FROM bookings b
 JOIN services s ON s.id = b.service_id
 WHERE b.organization_id = $1
   AND b.start_at BETWEEN $2 AND $3
+  AND ($4::uuid = '00000000-0000-0000-0000-000000000000'::uuid OR b.staff_id = $4)
 `
 
 type DashboardKPIParams struct {
 	OrganizationID uuid.UUID `db:"organization_id" json:"organization_id"`
 	StartAt        time.Time `db:"start_at" json:"start_at"`
 	StartAt_2      time.Time `db:"start_at_2" json:"start_at_2"`
+	Column4        uuid.UUID `db:"column_4" json:"column_4"`
 }
 
 type DashboardKPIRow struct {
@@ -138,7 +281,12 @@ type DashboardKPIRow struct {
 }
 
 func (q *Queries) DashboardKPI(ctx context.Context, arg DashboardKPIParams) (DashboardKPIRow, error) {
-	row := q.db.QueryRow(ctx, dashboardKPI, arg.OrganizationID, arg.StartAt, arg.StartAt_2)
+	row := q.db.QueryRow(ctx, dashboardKPI,
+		arg.OrganizationID,
+		arg.StartAt,
+		arg.StartAt_2,
+		arg.Column4,
+	)
 	var i DashboardKPIRow
 	err := row.Scan(
 		&i.TotalBookings,
@@ -156,16 +304,23 @@ SELECT
 FROM bookings
 WHERE organization_id = $1
   AND start_at BETWEEN $2 AND $3
+  AND ($4::uuid = '00000000-0000-0000-0000-000000000000'::uuid OR staff_id = $4)
 `
 
 type DashboardOccupancyParams struct {
 	OrganizationID uuid.UUID `db:"organization_id" json:"organization_id"`
 	StartAt        time.Time `db:"start_at" json:"start_at"`
 	StartAt_2      time.Time `db:"start_at_2" json:"start_at_2"`
+	Column4        uuid.UUID `db:"column_4" json:"column_4"`
 }
 
 func (q *Queries) DashboardOccupancy(ctx context.Context, arg DashboardOccupancyParams) (int32, error) {
-	row := q.db.QueryRow(ctx, dashboardOccupancy, arg.OrganizationID, arg.StartAt, arg.StartAt_2)
+	row := q.db.QueryRow(ctx, dashboardOccupancy,
+		arg.OrganizationID,
+		arg.StartAt,
+		arg.StartAt_2,
+		arg.Column4,
+	)
 	var occupancy_pct int32
 	err := row.Scan(&occupancy_pct)
 	return occupancy_pct, err
@@ -177,12 +332,14 @@ FROM bookings b
 JOIN services s ON s.id = b.service_id
 JOIN staff st ON st.id = b.staff_id
 WHERE b.organization_id = $1
+  AND ($2::uuid = '00000000-0000-0000-0000-000000000000'::uuid OR b.staff_id = $2)
 ORDER BY b.created_at DESC
-LIMIT $2
+LIMIT $3
 `
 
 type DashboardRecentBookingsParams struct {
 	OrganizationID uuid.UUID `db:"organization_id" json:"organization_id"`
+	Column2        uuid.UUID `db:"column_2" json:"column_2"`
 	Limit          int32     `db:"limit" json:"limit"`
 }
 
@@ -208,7 +365,7 @@ type DashboardRecentBookingsRow struct {
 }
 
 func (q *Queries) DashboardRecentBookings(ctx context.Context, arg DashboardRecentBookingsParams) ([]DashboardRecentBookingsRow, error) {
-	rows, err := q.db.Query(ctx, dashboardRecentBookings, arg.OrganizationID, arg.Limit)
+	rows, err := q.db.Query(ctx, dashboardRecentBookings, arg.OrganizationID, arg.Column2, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -247,6 +404,7 @@ func (q *Queries) DashboardRecentBookings(ctx context.Context, arg DashboardRece
 }
 
 const dashboardRevenueByDay = `-- name: DashboardRevenueByDay :many
+
 SELECT
     date_trunc('day', start_at)::date AS day,
     SUM(s.price_cents)::bigint AS revenue_cents,
@@ -256,6 +414,7 @@ JOIN services s ON s.id = b.service_id
 WHERE b.organization_id = $1
   AND b.status IN ('CONFIRMED','COMPLETED')
   AND b.start_at BETWEEN $2 AND $3
+  AND ($4::uuid = '00000000-0000-0000-0000-000000000000'::uuid OR b.staff_id = $4)
 GROUP BY 1
 ORDER BY 1 ASC
 `
@@ -264,6 +423,7 @@ type DashboardRevenueByDayParams struct {
 	OrganizationID uuid.UUID `db:"organization_id" json:"organization_id"`
 	StartAt        time.Time `db:"start_at" json:"start_at"`
 	StartAt_2      time.Time `db:"start_at_2" json:"start_at_2"`
+	Column4        uuid.UUID `db:"column_4" json:"column_4"`
 }
 
 type DashboardRevenueByDayRow struct {
@@ -272,8 +432,17 @@ type DashboardRevenueByDayRow struct {
 	BookingsCount int64     `db:"bookings_count" json:"bookings_count"`
 }
 
+// Dashboard aggregates — 5 row (PLAN.md T06) — all queries use DATE_TRUNC + GROUP BY in DB with index on start_at (idx_bookings_start_at, idx_bookings_org_status_time), not JS.
+// Store UTC (timestamptz), render in organization.timezone (Asia/Jakarta default). Availability engine uses tstzrange for overlap; dashboard uses BETWEEN + DATE_TRUNC for aggregates.
+// Staff scoping: OWNER full, STAFF filtered via optional staff_id param — pass '00000000-0000-0000-0000-000000000000'::uuid for no filter (OWNER), or real staff_id for STAFF.
+// All date ranges use BETWEEN with B-tree index on start_at; grouping via DATE_TRUNC uses hash aggregation in DB, not JS.
 func (q *Queries) DashboardRevenueByDay(ctx context.Context, arg DashboardRevenueByDayParams) ([]DashboardRevenueByDayRow, error) {
-	rows, err := q.db.Query(ctx, dashboardRevenueByDay, arg.OrganizationID, arg.StartAt, arg.StartAt_2)
+	rows, err := q.db.Query(ctx, dashboardRevenueByDay,
+		arg.OrganizationID,
+		arg.StartAt,
+		arg.StartAt_2,
+		arg.Column4,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -294,7 +463,7 @@ func (q *Queries) DashboardRevenueByDay(ctx context.Context, arg DashboardRevenu
 
 const dashboardRevenueByGranularity = `-- name: DashboardRevenueByGranularity :many
 SELECT
-    date_trunc($4::text, start_at) AS period,
+    date_trunc($4::text, start_at)::timestamptz AS period,
     SUM(s.price_cents)::bigint AS revenue_cents,
     COUNT(*)::bigint AS bookings_count
 FROM bookings b
@@ -302,6 +471,7 @@ JOIN services s ON s.id = b.service_id
 WHERE b.organization_id = $1
   AND b.status IN ('CONFIRMED','COMPLETED')
   AND b.start_at BETWEEN $2 AND $3
+  AND ($5::uuid = '00000000-0000-0000-0000-000000000000'::uuid OR b.staff_id = $5)
 GROUP BY 1
 ORDER BY 1 ASC
 `
@@ -311,12 +481,13 @@ type DashboardRevenueByGranularityParams struct {
 	StartAt        time.Time `db:"start_at" json:"start_at"`
 	StartAt_2      time.Time `db:"start_at_2" json:"start_at_2"`
 	Column4        string    `db:"column_4" json:"column_4"`
+	Column5        uuid.UUID `db:"column_5" json:"column_5"`
 }
 
 type DashboardRevenueByGranularityRow struct {
-	Period        pgtype.Interval `db:"period" json:"period"`
-	RevenueCents  int64           `db:"revenue_cents" json:"revenue_cents"`
-	BookingsCount int64           `db:"bookings_count" json:"bookings_count"`
+	Period        time.Time `db:"period" json:"period"`
+	RevenueCents  int64     `db:"revenue_cents" json:"revenue_cents"`
+	BookingsCount int64     `db:"bookings_count" json:"bookings_count"`
 }
 
 func (q *Queries) DashboardRevenueByGranularity(ctx context.Context, arg DashboardRevenueByGranularityParams) ([]DashboardRevenueByGranularityRow, error) {
@@ -325,6 +496,7 @@ func (q *Queries) DashboardRevenueByGranularity(ctx context.Context, arg Dashboa
 		arg.StartAt,
 		arg.StartAt_2,
 		arg.Column4,
+		arg.Column5,
 	)
 	if err != nil {
 		return nil, err
@@ -333,6 +505,63 @@ func (q *Queries) DashboardRevenueByGranularity(ctx context.Context, arg Dashboa
 	var items []DashboardRevenueByGranularityRow
 	for rows.Next() {
 		var i DashboardRevenueByGranularityRow
+		if err := rows.Scan(&i.Period, &i.RevenueCents, &i.BookingsCount); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const dashboardRevenueByGranularityTZ = `-- name: DashboardRevenueByGranularityTZ :many
+SELECT
+    date_trunc($4::text, (b.start_at AT TIME ZONE $5::text))::timestamptz AS period,
+    SUM(s.price_cents)::bigint AS revenue_cents,
+    COUNT(*)::bigint AS bookings_count
+FROM bookings b
+JOIN services s ON s.id = b.service_id
+WHERE b.organization_id = $1
+  AND b.status IN ('CONFIRMED','COMPLETED')
+  AND b.start_at BETWEEN $2 AND $3
+  AND ($6::uuid = '00000000-0000-0000-0000-000000000000'::uuid OR b.staff_id = $6)
+GROUP BY 1
+ORDER BY 1 ASC
+`
+
+type DashboardRevenueByGranularityTZParams struct {
+	OrganizationID uuid.UUID `db:"organization_id" json:"organization_id"`
+	StartAt        time.Time `db:"start_at" json:"start_at"`
+	StartAt_2      time.Time `db:"start_at_2" json:"start_at_2"`
+	Column4        string    `db:"column_4" json:"column_4"`
+	Column5        string    `db:"column_5" json:"column_5"`
+	Column6        uuid.UUID `db:"column_6" json:"column_6"`
+}
+
+type DashboardRevenueByGranularityTZRow struct {
+	Period        time.Time `db:"period" json:"period"`
+	RevenueCents  int64     `db:"revenue_cents" json:"revenue_cents"`
+	BookingsCount int64     `db:"bookings_count" json:"bookings_count"`
+}
+
+func (q *Queries) DashboardRevenueByGranularityTZ(ctx context.Context, arg DashboardRevenueByGranularityTZParams) ([]DashboardRevenueByGranularityTZRow, error) {
+	rows, err := q.db.Query(ctx, dashboardRevenueByGranularityTZ,
+		arg.OrganizationID,
+		arg.StartAt,
+		arg.StartAt_2,
+		arg.Column4,
+		arg.Column5,
+		arg.Column6,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DashboardRevenueByGranularityTZRow
+	for rows.Next() {
+		var i DashboardRevenueByGranularityTZRow
 		if err := rows.Scan(&i.Period, &i.RevenueCents, &i.BookingsCount); err != nil {
 			return nil, err
 		}
@@ -355,13 +584,18 @@ FROM bookings b
 JOIN services s ON s.id = b.service_id
 WHERE b.organization_id = $1
   AND b.status IN ('CONFIRMED','COMPLETED')
+  AND b.start_at BETWEEN $2 AND $3
+  AND ($4::uuid = '00000000-0000-0000-0000-000000000000'::uuid OR b.staff_id = $4)
 GROUP BY b.customer_email, b.customer_name
 ORDER BY bookings_count DESC
-LIMIT $2
+LIMIT $5
 `
 
 type DashboardTopCustomersParams struct {
 	OrganizationID uuid.UUID `db:"organization_id" json:"organization_id"`
+	StartAt        time.Time `db:"start_at" json:"start_at"`
+	StartAt_2      time.Time `db:"start_at_2" json:"start_at_2"`
+	Column4        uuid.UUID `db:"column_4" json:"column_4"`
 	Limit          int32     `db:"limit" json:"limit"`
 }
 
@@ -374,7 +608,13 @@ type DashboardTopCustomersRow struct {
 }
 
 func (q *Queries) DashboardTopCustomers(ctx context.Context, arg DashboardTopCustomersParams) ([]DashboardTopCustomersRow, error) {
-	rows, err := q.db.Query(ctx, dashboardTopCustomers, arg.OrganizationID, arg.Limit)
+	rows, err := q.db.Query(ctx, dashboardTopCustomers,
+		arg.OrganizationID,
+		arg.StartAt,
+		arg.StartAt_2,
+		arg.Column4,
+		arg.Limit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -411,15 +651,17 @@ JOIN services s ON s.id = b.service_id
 WHERE b.organization_id = $1
   AND b.start_at BETWEEN $2 AND $3
   AND b.status IN ('CONFIRMED','COMPLETED')
+  AND ($4::uuid = '00000000-0000-0000-0000-000000000000'::uuid OR b.staff_id = $4)
 GROUP BY s.id, s.name, s.color
 ORDER BY bookings_count DESC
-LIMIT $4
+LIMIT $5
 `
 
 type DashboardTopServicesParams struct {
 	OrganizationID uuid.UUID `db:"organization_id" json:"organization_id"`
 	StartAt        time.Time `db:"start_at" json:"start_at"`
 	StartAt_2      time.Time `db:"start_at_2" json:"start_at_2"`
+	Column4        uuid.UUID `db:"column_4" json:"column_4"`
 	Limit          int32     `db:"limit" json:"limit"`
 }
 
@@ -436,6 +678,7 @@ func (q *Queries) DashboardTopServices(ctx context.Context, arg DashboardTopServ
 		arg.OrganizationID,
 		arg.StartAt,
 		arg.StartAt_2,
+		arg.Column4,
 		arg.Limit,
 	)
 	if err != nil {

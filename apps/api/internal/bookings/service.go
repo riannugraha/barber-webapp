@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
 	"flowbook/api/internal/availability"
 	"flowbook/api/internal/db"
+	"flowbook/api/internal/email"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -36,11 +38,19 @@ type AvailabilityValidator interface {
 	ClearCacheForStaff(staffID uuid.UUID)
 }
 
+// EmailSender is interface for Resend booking emails + ics.
+// Implemented by internal/email.Client
+type EmailSender interface {
+	SendBookingConfirmed(ctx context.Context, booking db.Booking, service db.Service, staff db.Staff, org db.Organization) error
+	SendCancelled(ctx context.Context, booking db.Booking, service db.Service, staff db.Staff, org db.Organization) error
+}
+
 // Service is bookings domain logic — owns validation via availability, EXCLUDE handling, RBAC scoping.
 type Service struct {
 	repo  Repository
 	avail AvailabilityValidator
 	hub   Hub
+	email EmailSender
 }
 
 // noopHub is fallback when WS hub not wired (tests).
@@ -55,6 +65,15 @@ func NewService(repo Repository, avail AvailabilityValidator, hub Hub) *Service 
 	}
 	return &Service{repo: repo, avail: avail, hub: hub}
 }
+
+// SetEmailSender injects Resend email client (optional). Called from main.go after creation.
+// Keeping separate setter preserves backward compatibility with tests that call NewService(repo,avail,hub) without email.
+func (s *Service) SetEmailSender(es EmailSender) {
+	s.email = es
+}
+
+// Ensure Service implements email sender compile check
+var _ EmailSender = (*email.Client)(nil)
 
 // CreateRequest mirrors openapi CreateBookingRequest.
 type CreateRequest struct {
@@ -245,6 +264,25 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (db.Booking, er
 		"endAt":     endAt.UTC().Format(time.RFC3339),
 		"bookingId": b.ID.String(),
 	})
+
+	// Email: harga 0 Konsultasi Style 15m skip Stripe langsung CONFIRMED -> kirim BookingConfirmed + ics attach
+	if s.email != nil && b.Status == "CONFIRMED" && b.PaymentStatus == "PAID" && svc.PriceCents == 0 {
+		// Fetch org for template timezone
+		org, errOrg := s.repo.GetOrganization(ctx, orgID)
+		if errOrg != nil {
+			org = db.Organization{ID: orgID, Name: "FlowBarber Studio", Timezone: "Asia/Jakarta"}
+		}
+		// staff already fetched as st, but ensure
+		go func(booking db.Booking, service db.Service, staff db.Staff, org db.Organization) {
+			eCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if err := s.email.SendBookingConfirmed(eCtx, booking, service, staff, org); err != nil {
+				slog.Error("bookings: email BookingConfirmed failed (free booking)", "bookingId", booking.ID.String(), "error", err)
+			} else {
+				slog.Info("bookings: email BookingConfirmed sent (free booking)", "bookingId", booking.ID.String(), "to", booking.CustomerEmail)
+			}
+		}(b, svc, st, org)
+	}
 	return b, nil
 }
 
@@ -397,6 +435,30 @@ func (s *Service) Cancel(ctx context.Context, id uuid.UUID, role string, userID 
 		"endAt":     b.EndAt.Format(time.RFC3339),
 		"bookingId": b.ID.String(),
 	})
+
+	// Email: Cancelled — Resend kirim Cancelled (best effort, outside tx)
+	if s.email != nil {
+		// Fetch service/staff/org for template
+		svc, errSvc := s.repo.GetService(ctx, updated.ServiceID)
+		if errSvc == nil {
+			st, errSt := s.repo.GetStaff(ctx, updated.StaffID)
+			if errSt == nil {
+				org, errOrg := s.repo.GetOrganization(ctx, updated.OrganizationID)
+				if errOrg != nil {
+					org = db.Organization{ID: updated.OrganizationID, Name: "FlowBarber Studio", Timezone: "Asia/Jakarta"}
+				}
+				go func(booking db.Booking, service db.Service, staff db.Staff, org db.Organization) {
+					eCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+					defer cancel()
+					if err := s.email.SendCancelled(eCtx, booking, service, staff, org); err != nil {
+						slog.Error("bookings: email Cancelled failed", "bookingId", booking.ID.String(), "error", err)
+					} else {
+						slog.Info("bookings: email Cancelled sent", "bookingId", booking.ID.String(), "to", booking.CustomerEmail)
+					}
+				}(updated, svc, st, org)
+			}
+		}
+	}
 	return updated, nil
 }
 

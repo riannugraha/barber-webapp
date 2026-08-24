@@ -15,9 +15,12 @@ import (
 	"flowbook/api/internal/availability"
 	"flowbook/api/internal/bookings"
 	"flowbook/api/internal/config"
+	"flowbook/api/internal/dashboard"
 	"flowbook/api/internal/db"
+	"flowbook/api/internal/email"
 	"flowbook/api/internal/health"
 	appmw "flowbook/api/internal/middleware"
+	"flowbook/api/internal/payments"
 	"flowbook/api/internal/testhelpers"
 	"flowbook/api/internal/ws"
 )
@@ -126,15 +129,48 @@ func main() {
 		slog.Warn("availability engine disabled — no DB pool")
 	}
 
+	// Email — Resend client for BookingConfirmed + ics attach + Cancelled + Reminder H-1 cron (T05)
+	emailClient := email.New(cfg.ResendAPIKey, cfg.ResendFromEmail, cfg.FrontendURL)
+	slog.Info("email client initialized", "enabled", emailClient.Health(), "from", cfg.ResendFromEmail)
+
 	// Bookings Core — T04: POST /bookings validasi via GetSlots, tstzrange, 409 23P01, pagination, cancel/reschedule tx, RBAC, hub.Broadcast
 	if pool != nil {
 		bookingsRepo := bookings.NewRepository(pool)
 		bookingsSvc := bookings.NewService(bookingsRepo, availSvc, wsHub)
+		// Inject email for free booking (price 0) + cancelled notifications (T05)
+		bookingsSvc.SetEmailSender(emailClient)
 		bookingsHandler := bookings.NewHandler(bookingsSvc)
 		bookingsHandler.RegisterRoutes(v1, cfg.JWTSecret)
-		slog.Info("bookings core registered", "routes", "POST /bookings, GET /bookings, GET /bookings/:id, POST /bookings/:id/cancel, POST /bookings/:id/reschedule", "ws", "slot_taken")
+		slog.Info("bookings core registered", "routes", "POST /bookings, GET /bookings, GET /bookings/:id, POST /bookings/:id/cancel, POST /bookings/:id/reschedule", "ws", "slot_taken", "email", "free+cancelled")
 	} else {
 		slog.Warn("bookings core disabled — no DB pool")
+	}
+
+	// Payments — T05: POST /payments/checkout-session stripe-go 76 sk_test redirect, POST /payments/webhook verify whsec signature idempotent via stripeEventId UNIQUE -> retry 200
+	{
+		var poolQueries *db.Queries
+		if pool != nil {
+			poolQueries = db.New(pool)
+		}
+		paymentsSvc := payments.NewService(pool, poolQueries, cfg.StripeSecretKey, cfg.StripeWebhookSecret, emailClient)
+		paymentsHandler := payments.NewHandler(paymentsSvc)
+		paymentsHandler.RegisterRoutes(v1)
+		slog.Info("payments registered", "routes", "POST /payments/checkout-session, POST /payments/webhook", "stripe", "sk_test+whsec", "idempotent", "stripeEventId UNIQUE", "freeSkip", "Konsultasi Style 15m")
+		// Reminder H-1 cron Go tiap 15m (T05) — only when pool available
+		if pool != nil {
+			go email.StartReminderCron(context.Background(), pool, emailClient)
+			slog.Info("reminder cron scheduled", "interval", "15m", "window", "60-75m", "handler", "email.StartReminderCron")
+		}
+	}
+
+	// Dashboard Aggregates — T06: GET /dashboard?from&to&granularity&tz 5-row with DATE_TRUNC + GROUP BY in DB, idx start_at, not JS. OWNER full, STAFF scoped miliknya.
+	if pool != nil {
+		dashSvc := dashboard.NewService(pool)
+		dashHandler := dashboard.NewHandler(dashSvc)
+		dashHandler.RegisterRoutes(v1, cfg.JWTSecret)
+		slog.Info("dashboard aggregates registered", "routes", "GET /dashboard?from&to&granularity&tz", "queries", "DATE_TRUNC+GROUP BY with idx_bookings_start_at", "rows", "kpi, revenueSeries 10 titik, pie 35%, bar Andi90/Bayu70/Sari20, heatmap 7x15, topCustomers 15, recent10, insights")
+	} else {
+		slog.Warn("dashboard disabled — no DB pool")
 	}
 
 	// Test-only helpers — POST /test/reset + /test/seed-full guard APP_ENV=test && x-test-secret==TEST_SECRET (T07)

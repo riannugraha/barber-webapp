@@ -31,11 +31,19 @@ type Querier interface {
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	DashboardBookingsByHour(ctx context.Context, arg DashboardBookingsByHourParams) ([]DashboardBookingsByHourRow, error)
 	DashboardBookingsByStaff(ctx context.Context, arg DashboardBookingsByStaffParams) ([]DashboardBookingsByStaffRow, error)
+	DashboardBusiestMonth(ctx context.Context, arg DashboardBusiestMonthParams) (DashboardBusiestMonthRow, error)
+	DashboardCancelRate(ctx context.Context, arg DashboardCancelRateParams) (int32, error)
+	DashboardHeatmap(ctx context.Context, arg DashboardHeatmapParams) ([]DashboardHeatmapRow, error)
 	DashboardKPI(ctx context.Context, arg DashboardKPIParams) (DashboardKPIRow, error)
 	DashboardOccupancy(ctx context.Context, arg DashboardOccupancyParams) (int32, error)
 	DashboardRecentBookings(ctx context.Context, arg DashboardRecentBookingsParams) ([]DashboardRecentBookingsRow, error)
+	// Dashboard aggregates — 5 row (PLAN.md T06) — all queries use DATE_TRUNC + GROUP BY in DB with index on start_at (idx_bookings_start_at, idx_bookings_org_status_time), not JS.
+	// Store UTC (timestamptz), render in organization.timezone (Asia/Jakarta default). Availability engine uses tstzrange for overlap; dashboard uses BETWEEN + DATE_TRUNC for aggregates.
+	// Staff scoping: OWNER full, STAFF filtered via optional staff_id param — pass '00000000-0000-0000-0000-000000000000'::uuid for no filter (OWNER), or real staff_id for STAFF.
+	// All date ranges use BETWEEN with B-tree index on start_at; grouping via DATE_TRUNC uses hash aggregation in DB, not JS.
 	DashboardRevenueByDay(ctx context.Context, arg DashboardRevenueByDayParams) ([]DashboardRevenueByDayRow, error)
 	DashboardRevenueByGranularity(ctx context.Context, arg DashboardRevenueByGranularityParams) ([]DashboardRevenueByGranularityRow, error)
+	DashboardRevenueByGranularityTZ(ctx context.Context, arg DashboardRevenueByGranularityTZParams) ([]DashboardRevenueByGranularityTZRow, error)
 	DashboardTopCustomers(ctx context.Context, arg DashboardTopCustomersParams) ([]DashboardTopCustomersRow, error)
 	DashboardTopServices(ctx context.Context, arg DashboardTopServicesParams) ([]DashboardTopServicesRow, error)
 	DeleteAvailability(ctx context.Context, id uuid.UUID) error

@@ -631,7 +631,9 @@ paths:
   /dashboard:
     get:
       tags: [Dashboard]
-      summary: Dashboard aggregates — revenue, bookings, occupancy (OWNER)
+      summary: Dashboard aggregates — 5-row revenue, bookings, occupancy with DATE_TRUNC + GROUP BY in DB (idx_bookings_start_at)
+      description: |
+        5-row dashboard: kpi {revenue, bookings, occupancy, avgTicket, delta}, area 10 titik Nov2025->Agu2026 (DATE_TRUNC month), pie Classic Cut 35%, bar Andi 90/Bayu70/Sari20, heatmap 7x15, topCustomers 15 Siti 18x, recent 10, insights {busiestMonth Des 2025, cancelRate 7.2%, utilization}. Queries use tstzrange + DATE_TRUNC + GROUP BY in DB with index start_at, not JS. OWNER full, STAFF scoped miliknya.
       operationId: getDashboard
       security:
         - bearerAuth: []
@@ -642,32 +644,38 @@ paths:
             type: string
             format: date
             example: '2025-11-01'
+          description: Start date inclusive YYYY-MM-DD, interpreted in tz
         - in: query
           name: to
           schema:
             type: string
             format: date
             example: '2026-08-24'
+          description: End date inclusive YYYY-MM-DD, interpreted in tz
         - in: query
           name: granularity
           schema:
             type: string
             enum: [day, week, month]
             default: month
+          description: Bucket for revenueSeries — DATE_TRUNC granularity in DB
         - in: query
           name: tz
           schema:
             type: string
             default: Asia/Jakarta
+            example: Asia/Jakarta
+          description: IANA timezone — bucketing via AT TIME ZONE in DB, render tabular-nums
       responses:
         '200':
-          description: Aggregated dashboard data
+          description: Aggregated dashboard data — 5 rows
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/DashboardResponse'
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
 
   /ws:
     get:
@@ -1144,18 +1152,29 @@ components:
           properties:
             totalBookings:
               type: integer
+              description: Total bookings in range — tabular-nums
             confirmedBookings:
               type: integer
             cancelledBookings:
               type: integer
             totalRevenueCents:
               type: integer
+              description: Sum price_cents CONFIRMED/COMPLETED — Rp tabular-nums
             avgTicketCents:
               type: integer
             occupancyPct:
               type: number
+              description: CONFIRMED/COMPLETED / total *100
+            deltaRevenuePct:
+              type: number
+              nullable: true
+              description: vs previous period equal length
+            deltaBookingsPct:
+              type: number
+              nullable: true
         revenueSeries:
           type: array
+          description: Area 10 titik Nov2025->Agu2026 — DATE_TRUNC + GROUP BY in DB with index start_at
           items:
             type: object
             required: [period, revenueCents, bookingsCount]
@@ -1163,12 +1182,37 @@ components:
               period:
                 type: string
                 format: date-time
+                description: Bucket start in target tz, ISO8601 UTC
               revenueCents:
                 type: integer
               bookingsCount:
                 type: integer
+              label:
+                type: string
+                nullable: true
         topServices:
           type: array
+          description: Pie Classic Cut 35% — share of bookings
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+              name:
+                type: string
+              color:
+                type: string
+              bookingsCount:
+                type: integer
+              revenueCents:
+                type: integer
+              percentage:
+                type: number
+                description: Share of confirmed bookings
+        bookingsByStaff:
+          type: array
+          description: Bar Andi 90/Bayu 70/Sari 20 — GROUP BY staff.id, DATE_TRUNC in DB
           items:
             type: object
             properties:
@@ -1180,21 +1224,10 @@ components:
               bookingsCount:
                 type: integer
               revenueCents:
-                type: integer
-        bookingsByStaff:
-          type: array
-          items:
-            type: object
-            properties:
-              id:
-                type: string
-                format: uuid
-              name:
-                type: string
-              bookingsCount:
                 type: integer
         bookingsByHour:
           type: array
+          description: Hourly distribution — EXTRACT(HOUR AT TIME ZONE tz) + GROUP BY in DB
           items:
             type: object
             properties:
@@ -1202,8 +1235,26 @@ components:
                 type: integer
               bookingsCount:
                 type: integer
+        heatmap:
+          type: array
+          description: Heatmap 7x15 Jam Sibuk — DOW 0-6 x Hour 7-21, GROUP BY dow, hour in DB with AT TIME ZONE
+          items:
+            type: object
+            required: [dow, hour, count]
+            properties:
+              dow:
+                type: integer
+                minimum: 0
+                maximum: 6
+              hour:
+                type: integer
+                minimum: 0
+                maximum: 23
+              count:
+                type: integer
         topCustomers:
           type: array
+          description: Top 15 Loyal — Siti 18x, GROUP BY customer_email in DB
           items:
             type: object
             properties:
@@ -1213,7 +1264,31 @@ components:
                 type: string
               bookingsCount:
                 type: integer
+              totalSpentCents:
+                type: integer
+              lastBookingAt:
+                type: string
+                format: date-time
+                nullable: true
         recentBookings:
           type: array
+          description: Recent 10 bookings with status Badge
           items:
             $ref: '#/components/schemas/Booking'
+        insights:
+          type: object
+          description: Insight row — busiestMonth Des 2025, cancelRate 7.2%, utilization
+          properties:
+            busiestMonth:
+              type: string
+              example: "Des 2025"
+            busiestMonthCount:
+              type: integer
+            busiestMonthRevenue:
+              type: integer
+            cancelRate:
+              type: number
+              example: 7.2
+            utilization:
+              type: number
+              example: 68

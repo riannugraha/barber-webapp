@@ -9,6 +9,7 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/jackc/pgx/v5 v5.7.6
 	github.com/labstack/echo/v4 v4.13.4
+	github.com/stripe/stripe-go/v76 v76.25.0
 	golang.org/x/crypto v0.38.0
 )
 
