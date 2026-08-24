@@ -14,8 +14,10 @@ import (
 	"flowbook/api/internal/auth"
 	"flowbook/api/internal/availability"
 	"flowbook/api/internal/config"
-	appmw "flowbook/api/internal/middleware"
 	"flowbook/api/internal/db"
+	"flowbook/api/internal/health"
+	appmw "flowbook/api/internal/middleware"
+	"flowbook/api/internal/testhelpers"
 )
 
 func main() {
@@ -57,11 +59,12 @@ func main() {
 		Format: `${time_rfc3339} ${method} ${uri} ${status} ${latency_human}` + "\n",
 	}))
 
-	// Health — Koyeb expects GET /health at root
-	e.GET("/health", healthHandler(pool))
-	e.GET("/api/v1/health", healthHandler(pool))
+	// Health — Koyeb expects GET /health at root, returns {"status":"ok","db":"up","version":"1.0.0"} with pgxpool ping (T07)
+	healthHandler := health.HealthHandler(pool)
+	e.GET("/health", healthHandler)
+	e.GET("/api/v1/health", healthHandler)
 	e.GET("/", func(c echo.Context) error {
-		return c.JSON(http.StatusOK, map[string]string{"status": "ok", "service": "flowbook-api"})
+		return c.JSON(http.StatusOK, map[string]string{"status": "ok", "service": "flowbook-api", "version": health.Version})
 	})
 
 	// OpenAPI spec — serve file for orval
@@ -74,7 +77,7 @@ func main() {
 
 	// API v1 group
 	v1 := e.Group("/api/v1")
-	v1.GET("/health", healthHandler(pool))
+	v1.GET("/health", healthHandler)
 	v1.GET("/openapi.yaml", func(c echo.Context) error {
 		return c.File("openapi.yaml")
 	})
@@ -114,75 +117,21 @@ func main() {
 		slog.Warn("availability engine disabled — no DB pool")
 	}
 
-	// Test-only helpers — only when APP_ENV=test + x-test-secret
+	// Test-only helpers — POST /test/reset + /test/seed-full guard APP_ENV=test && x-test-secret==TEST_SECRET (T07)
+	// Wired always, handler itself checks guard and returns 404 when not in test env (hide existence)
+	// This allows tester Opsi A: TRUNCATE bookings,payments,customers RESTART IDENTITY CASCADE + seedMinimal (150ms)
+	th := testhelpers.New(pool, cfg.AppEnv, cfg.TestSecret)
+	th.RegisterRoutes(v1)
 	if cfg.AppEnv == "test" {
-		v1.POST("/test/reset", testResetHandler(pool, cfg.TestSecret))
-		v1.POST("/test/seed-full", testSeedFullHandler(pool, cfg.TestSecret))
-		slog.Info("test helpers enabled", "env", "test")
+		slog.Info("test helpers enabled", "env", "test", "guard", "APP_ENV=test && x-test-secret==TEST_SECRET")
+	} else {
+		slog.Info("test helpers wired but guarded (404 unless APP_ENV=test)", "env", cfg.AppEnv)
 	}
 
 	slog.Info("starting server", "port", cfg.Port, "env", cfg.AppEnv)
 	if err := e.Start(":" + cfg.Port); err != nil && err != http.ErrServerClosed {
 		slog.Error("server error", "error", err)
 		os.Exit(1)
-	}
-}
-
-func healthHandler(pool *pgxpool.Pool) echo.HandlerFunc {
-	return func(c echo.Context) error {
-		dbStatus := "up"
-		if pool == nil {
-			dbStatus = "down"
-		} else {
-			ctx, cancel := context.WithTimeout(c.Request().Context(), 2*time.Second)
-			defer cancel()
-			if err := pool.Ping(ctx); err != nil {
-				dbStatus = "down"
-				return c.JSON(http.StatusOK, map[string]string{"status": "ok", "db": dbStatus, "error": err.Error()})
-			}
-		}
-		return c.JSON(http.StatusOK, map[string]string{"status": "ok", "db": dbStatus})
-	}
-}
-
-func testOnlyGuard(c echo.Context, expected string) bool {
-	if expected == "" {
-		return false
-	}
-	return c.Request().Header.Get("x-test-secret") == expected
-}
-
-func testResetHandler(pool *pgxpool.Pool, secret string) echo.HandlerFunc {
-	return func(c echo.Context) error {
-		if !testOnlyGuard(c, secret) {
-			return echo.NewHTTPError(http.StatusUnauthorized, map[string]string{"error": "unauthorized", "message": "invalid x-test-secret or APP_ENV!=test"})
-		}
-		if pool == nil {
-			return echo.NewHTTPError(http.StatusServiceUnavailable, map[string]string{"error": "db_unavailable"})
-		}
-		ctx := c.Request().Context()
-		// Opsi A: TRUNCATE + seedMinimal — 150ms
-		_, err := pool.Exec(ctx, `TRUNCATE bookings, payments, customers RESTART IDENTITY CASCADE`)
-		if err != nil {
-			slog.Error("test reset truncate failed", "error", err)
-			return echo.NewHTTPError(http.StatusInternalServerError, map[string]string{"error": "truncate_failed", "message": err.Error()})
-		}
-		// seedMinimal is stubbed — full seed in cmd/seed
-		slog.Info("test reset done")
-		return c.NoContent(http.StatusNoContent)
-	}
-}
-
-func testSeedFullHandler(pool *pgxpool.Pool, secret string) echo.HandlerFunc {
-	return func(c echo.Context) error {
-		if !testOnlyGuard(c, secret) {
-			return echo.NewHTTPError(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
-		}
-		if pool == nil {
-			return echo.NewHTTPError(http.StatusServiceUnavailable, map[string]string{"error": "db_unavailable"})
-		}
-		slog.Info("test seed-full requested (implement in cmd/seed)")
-		return c.NoContent(http.StatusNoContent)
 	}
 }
 

@@ -1,8 +1,8 @@
 package middleware
 
 import (
-	echoMw "github.com/labstack/echo/v4/middleware"
 	"github.com/labstack/echo/v4"
+	echoMw "github.com/labstack/echo/v4/middleware"
 )
 
 // RequestID returns Echo RequestID middleware.

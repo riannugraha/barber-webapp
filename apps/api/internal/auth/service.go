@@ -71,11 +71,11 @@ type LoginRequest struct {
 
 // UserResponse is the public user shape returned in AuthResponse.
 type UserResponse struct {
-	ID             string  `json:"id"`
-	OrganizationID *string `json:"organizationId,omitempty"`
-	Email          string  `json:"email"`
-	Name           string  `json:"name"`
-	Role           string  `json:"role"`
+	ID             string    `json:"id"`
+	OrganizationID *string   `json:"organizationId,omitempty"`
+	Email          string    `json:"email"`
+	Name           string    `json:"name"`
+	Role           string    `json:"role"`
 	CreatedAt      time.Time `json:"createdAt"`
 }
 

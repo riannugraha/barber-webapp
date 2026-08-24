@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
+	"flowbook/api/internal/db"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"flowbook/api/internal/db"
 )
 
 // Repository abstracts DB access for auth — allows httptest without real pool.
@@ -84,9 +84,9 @@ func (r *PGRepository) RevokeRefreshToken(ctx context.Context, tokenHash string)
 // InMemoryRepository is a test double with no external DB — used for httptest unit tests.
 // It stores users and refresh tokens in maps.
 type InMemoryRepository struct {
-	usersByEmail   map[string]db.User
-	usersByID      map[uuid.UUID]db.User
-	refreshByHash  map[string]db.RefreshToken
+	usersByEmail  map[string]db.User
+	usersByID     map[uuid.UUID]db.User
+	refreshByHash map[string]db.RefreshToken
 }
 
 func NewInMemoryRepository() *InMemoryRepository {

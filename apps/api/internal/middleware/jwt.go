@@ -11,11 +11,11 @@ import (
 
 // Context keys for authenticated user
 const (
-	ContextKeyUser     = "user"
-	ContextKeyUserID   = "userID"
-	ContextKeyUserRole = "userRole"
+	ContextKeyUser      = "user"
+	ContextKeyUserID    = "userID"
+	ContextKeyUserRole  = "userRole"
 	ContextKeyUserEmail = "userEmail"
-	ContextKeyOrgID    = "orgID"
+	ContextKeyOrgID     = "orgID"
 )
 
 // Claims is the JWT access token payload (15m).

@@ -1,0 +1,64 @@
+name: Keep Warm — Supabase anti-pause (7 hari)
+
+on:
+  schedule:
+    # daily 09:00 UTC — prevent Supabase pause after 7 days idle (PLAN.md §5)
+    - cron: "0 9 * * *"
+  workflow_dispatch:
+
+jobs:
+  ping-db:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql-client
+
+      - name: Ping Supabase QA (SELECT 1)
+        env:
+          DATABASE_URL: ${{ secrets.QA_DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "QA_DATABASE_URL not set — skipping QA ping"
+          else
+            echo "Pinging Supabase QA (pooler 6543)..."
+            psql "$DATABASE_URL" -c "SELECT 1 as keep_warm_qa;" -v ON_ERROR_STOP=1
+            echo "QA ping OK"
+          fi
+
+      - name: Ping Supabase Prod (SELECT 1) — optional
+        if: ${{ secrets.DATABASE_URL != '' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          echo "Pinging Supabase Prod..."
+          psql "$DATABASE_URL" -c "SELECT 1 as keep_warm_prod;" -v ON_ERROR_STOP=1
+          echo "Prod ping OK"
+
+  ping-api:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping Koyeb API /health (keep warm)
+        env:
+          API_URL: ${{ secrets.API_URL }}
+          QA_API_URL: ${{ secrets.QA_API_URL }}
+        run: |
+          set -e
+          for url in "$API_URL" "$QA_API_URL"; do
+            if [ -z "$url" ]; then
+              echo "No API_URL set — skipping"
+              continue
+            fi
+            # normalize to /health
+            health_url=$(echo "$url" | sed -E 's|/api/v1/?$||')"/health"
+            echo "GET $health_url"
+            curl -fsS --max-time 10 "$health_url" | head -c 500; echo
+            echo "Ping $health_url OK"
+          done
+          # fallback: try default prod placeholder if no secrets
+          if [ -z "$API_URL" ] && [ -z "$QA_API_URL" ]; then
+            echo "No API_URL secrets — workflow configured but no target. Set QA_API_URL / API_URL secrets in repo."
+          fi

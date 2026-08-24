@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/google/uuid"
 	"flowbook/api/internal/db"
+	"github.com/google/uuid"
 )
 
 // Repository abstracts DB access for the calendar engine.

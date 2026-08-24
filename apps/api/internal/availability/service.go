@@ -9,10 +9,10 @@ import (
 	"sync"
 	"time"
 
+	"flowbook/api/internal/db"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"flowbook/api/internal/db"
 )
 
 // Slot represents a 15m grid slot returned by GetSlots.
