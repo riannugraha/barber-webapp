@@ -115,7 +115,7 @@ func (h *Handler) Webhook(c echo.Context) error {
 	if err := h.svc.HandleWebhook(c.Request().Context(), body, sigHeader); err != nil {
 		// Invalid signature -> 400, other errors log but return 200 to prevent retry storm
 		lower := strings.ToLower(err.Error())
-		if strings.Contains(lower, "invalid signature") || strings.Contains(lower, "no valid signature") || strings.Contains(lower, "invalid header") {
+		if strings.Contains(lower, "invalid signature") || strings.Contains(lower, "no valid signature") || strings.Contains(lower, "invalid header") || strings.Contains(lower, "invalid stripe-signature") || (strings.Contains(lower, "invalid") && strings.Contains(lower, "signature")) || strings.Contains(lower, "empty payload") {
 			return c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_signature", Message: err.Error()})
 		}
 		// For other errors (DB etc.), we still return 200 to avoid Stripe retry loop, but log?

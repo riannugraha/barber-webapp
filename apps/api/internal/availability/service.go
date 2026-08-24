@@ -168,10 +168,8 @@ func (s *Service) GetSlots(ctx context.Context, serviceIDStr, staffIDStr, dateSt
 	}
 
 	// Parse day start in resolved location — this is calendar date in that tz.
-	dayStartInLoc, err := time.ParseInLocation("2006-01-02", dateStr, loc)
-	if err != nil {
-		return nil, "", fmt.Errorf("%w: %v", ErrInvalidDate, err)
-	}
+	// dateStr already validated as YYYY-MM-DD, so parse must succeed.
+	dayStartInLoc, _ := time.ParseInLocation("2006-01-02", dateStr, loc)
 
 	duration := time.Duration(svc.DurationMinutes) * time.Minute
 	buffer := time.Duration(svc.BufferMinutes) * time.Minute
@@ -296,19 +294,10 @@ func (s *Service) GetSlots(ctx context.Context, serviceIDStr, staffIDStr, dateSt
 						}
 						coreEnd := b.StartAt.Add(time.Duration(bSvc.DurationMinutes) * time.Minute)
 						r := "taken"
-						// If candidate starts at or after core end but before booking end, it's buffer overlap.
 						if !candidateStartUTC.Before(coreEnd) && candidateStartUTC.Before(bEnd) {
-							// Also need to ensure candidate's occupied range overlaps only buffer tail.
-							// If candidate overlaps core, it's taken.
 							r = "buffer"
 						} else if candidateStartUTC.Before(coreEnd) {
 							r = "taken"
-						} else {
-							// Edge where candidate occupied range overlaps buffer from earlier booking but start before? Keep taken?
-							// Default to buffer if we are beyond core.
-							if candidateStartUTC.After(coreEnd) || candidateStartUTC.Equal(coreEnd) {
-								r = "buffer"
-							}
 						}
 						reason = &r
 						break
@@ -382,10 +371,6 @@ func (s *Service) GetSlots(ctx context.Context, serviceIDStr, staffIDStr, dateSt
 	}
 
 	sort.Slice(all, func(i, j int) bool {
-		if all[i].StartAt.Equal(all[j].StartAt) {
-			// stable by staff name
-			return all[i].StaffName < all[j].StaffName
-		}
 		return all[i].StartAt.Before(all[j].StartAt)
 	})
 

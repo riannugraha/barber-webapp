@@ -110,11 +110,6 @@ func (h *Handler) GetSlots(c echo.Context) error {
 		}
 	}
 
-	// Ensure slots not nil for JSON
-	if slots == nil {
-		slots = []Slot{}
-	}
-
 	resp := SlotsResponse{
 		Date:  date,
 		TZ:    resolvedTZ,
