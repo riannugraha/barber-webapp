@@ -10,13 +10,9 @@ export default defineConfig({
       target: "./generated/api.ts",
       client: "react-query",
       httpClient: "fetch",
-      clean: false,
+      clean: true,
       prettier: true,
       override: {
-        mutator: {
-          path: "./lib/api.ts",
-          name: "api",
-        },
         query: {
           useQuery: true,
           useMutation: true,
