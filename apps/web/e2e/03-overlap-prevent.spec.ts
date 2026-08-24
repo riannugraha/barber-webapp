@@ -12,7 +12,7 @@ test.describe("03 overlap prevent — EXCLUDE 409", () => {
     await page.route("**/bookings", async (route) => {
       const req = route.request();
       if (req.method() === "POST") {
-        const body = req.postDataJSON() as { staffId: string; startAt: string; serviceId?: string };
+        const body = req.postDataJSON() as { staffId: string; startAt: string; serviceId?: string; customerName?: string; customerEmail?: string };
         const start = new Date(body.startAt);
         const end = new Date(start.getTime() + 30 * 60000); // classic 30m
         // Check overlap with existing for same staff
