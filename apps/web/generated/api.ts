@@ -238,31 +238,48 @@ export interface CreateBookingRequest {
 }
 
 export type DashboardResponseKpi = {
+  /** Total bookings in range — tabular-nums */
   totalBookings: number;
   confirmedBookings: number;
   cancelledBookings?: number;
+  /** Sum price_cents CONFIRMED/COMPLETED — Rp tabular-nums */
   totalRevenueCents: number;
   avgTicketCents: number;
+  /** CONFIRMED/COMPLETED / total *100 */
   occupancyPct: number;
+  /**
+   * vs previous period equal length
+   * @nullable
+   */
+  deltaRevenuePct?: number | null;
+  /** @nullable */
+  deltaBookingsPct?: number | null;
 };
 
 export type DashboardResponseRevenueSeriesItem = {
+  /** Bucket start in target tz, ISO8601 UTC */
   period: string;
   revenueCents: number;
   bookingsCount: number;
+  /** @nullable */
+  label?: string | null;
 };
 
 export type DashboardResponseTopServicesItem = {
   id?: string;
   name?: string;
+  color?: string;
   bookingsCount?: number;
   revenueCents?: number;
+  /** Share of confirmed bookings */
+  percentage?: number;
 };
 
 export type DashboardResponseBookingsByStaffItem = {
   id?: string;
   name?: string;
   bookingsCount?: number;
+  revenueCents?: number;
 };
 
 export type DashboardResponseBookingsByHourItem = {
@@ -270,20 +287,58 @@ export type DashboardResponseBookingsByHourItem = {
   bookingsCount?: number;
 };
 
+export type DashboardResponseHeatmapItem = {
+  /**
+   * @minimum 0
+   * @maximum 6
+   */
+  dow: number;
+  /**
+   * @minimum 0
+   * @maximum 23
+   */
+  hour: number;
+  count: number;
+};
+
 export type DashboardResponseTopCustomersItem = {
   customerEmail?: string;
   customerName?: string;
   bookingsCount?: number;
+  totalSpentCents?: number;
+  /** @nullable */
+  lastBookingAt?: string | null;
+};
+
+/**
+ * Insight row — busiestMonth Des 2025, cancelRate 7.2%, utilization
+ */
+export type DashboardResponseInsights = {
+  busiestMonth?: string;
+  busiestMonthCount?: number;
+  busiestMonthRevenue?: number;
+  cancelRate?: number;
+  utilization?: number;
 };
 
 export interface DashboardResponse {
   kpi: DashboardResponseKpi;
+  /** Area 10 titik Nov2025->Agu2026 — DATE_TRUNC + GROUP BY in DB with index start_at */
   revenueSeries: DashboardResponseRevenueSeriesItem[];
+  /** Pie Classic Cut 35% — share of bookings */
   topServices?: DashboardResponseTopServicesItem[];
+  /** Bar Andi 90/Bayu 70/Sari 20 — GROUP BY staff.id, DATE_TRUNC in DB */
   bookingsByStaff?: DashboardResponseBookingsByStaffItem[];
+  /** Hourly distribution — EXTRACT(HOUR AT TIME ZONE tz) + GROUP BY in DB */
   bookingsByHour?: DashboardResponseBookingsByHourItem[];
+  /** Heatmap 7x15 Jam Sibuk — DOW 0-6 x Hour 7-21, GROUP BY dow, hour in DB with AT TIME ZONE */
+  heatmap?: DashboardResponseHeatmapItem[];
+  /** Top 15 Loyal — Siti 18x, GROUP BY customer_email in DB */
   topCustomers?: DashboardResponseTopCustomersItem[];
+  /** Recent 10 bookings with status Badge */
   recentBookings?: Booking[];
+  /** Insight row — busiestMonth Des 2025, cancelRate 7.2%, utilization */
+  insights?: DashboardResponseInsights;
 }
 
 /**
@@ -429,9 +484,21 @@ export type StripeWebhook200 = {
 };
 
 export type GetDashboardParams = {
+/**
+ * Start date inclusive YYYY-MM-DD, interpreted in tz
+ */
 from?: string;
+/**
+ * End date inclusive YYYY-MM-DD, interpreted in tz
+ */
 to?: string;
+/**
+ * Bucket for revenueSeries — DATE_TRUNC granularity in DB
+ */
 granularity?: GetDashboardGranularity;
+/**
+ * IANA timezone — bucketing via AT TIME ZONE in DB, render tabular-nums
+ */
 tz?: string;
 };
 
@@ -2903,7 +2970,9 @@ export const useStripeWebhook = <TError = Error,
     }
     
 /**
- * @summary Dashboard aggregates — revenue, bookings, occupancy (OWNER)
+ * 5-row dashboard: kpi {revenue, bookings, occupancy, avgTicket, delta}, area 10 titik Nov2025->Agu2026 (DATE_TRUNC month), pie Classic Cut 35%, bar Andi 90/Bayu70/Sari20, heatmap 7x15, topCustomers 15 Siti 18x, recent 10, insights {busiestMonth Des 2025, cancelRate 7.2%, utilization}. Queries use tstzrange + DATE_TRUNC + GROUP BY in DB with index start_at, not JS. OWNER full, STAFF scoped miliknya.
+
+ * @summary Dashboard aggregates — 5-row revenue, bookings, occupancy with DATE_TRUNC + GROUP BY in DB (idx_bookings_start_at)
  */
 export type getDashboardResponse200 = {
   data: DashboardResponse
@@ -2919,11 +2988,16 @@ export type getDashboardResponse403 = {
   data: ForbiddenResponse
   status: 403
 }
+
+export type getDashboardResponse422 = {
+  data: ValidationErrorResponse
+  status: 422
+}
     
 export type getDashboardResponseSuccess = (getDashboardResponse200) & {
   headers: Headers;
 };
-export type getDashboardResponseError = (getDashboardResponse401 | getDashboardResponse403) & {
+export type getDashboardResponseError = (getDashboardResponse401 | getDashboardResponse403 | getDashboardResponse422) & {
   headers: Headers;
 };
 
@@ -2972,7 +3046,7 @@ export const getGetDashboardQueryKey = (params?: GetDashboardParams,) => {
     }
 
     
-export const getGetDashboardQueryOptions = <TData = Awaited<ReturnType<typeof getDashboard>>, TError = UnauthorizedResponse | ForbiddenResponse>(params?: GetDashboardParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDashboard>>, TError, TData>>, fetch?: RequestInit}
+export const getGetDashboardQueryOptions = <TData = Awaited<ReturnType<typeof getDashboard>>, TError = UnauthorizedResponse | ForbiddenResponse | ValidationErrorResponse>(params?: GetDashboardParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDashboard>>, TError, TData>>, fetch?: RequestInit}
 ) => {
 
 const {query: queryOptions, fetch: fetchOptions} = options ?? {};
@@ -2991,10 +3065,10 @@ const {query: queryOptions, fetch: fetchOptions} = options ?? {};
 }
 
 export type GetDashboardQueryResult = NonNullable<Awaited<ReturnType<typeof getDashboard>>>
-export type GetDashboardQueryError = UnauthorizedResponse | ForbiddenResponse
+export type GetDashboardQueryError = UnauthorizedResponse | ForbiddenResponse | ValidationErrorResponse
 
 
-export function useGetDashboard<TData = Awaited<ReturnType<typeof getDashboard>>, TError = UnauthorizedResponse | ForbiddenResponse>(
+export function useGetDashboard<TData = Awaited<ReturnType<typeof getDashboard>>, TError = UnauthorizedResponse | ForbiddenResponse | ValidationErrorResponse>(
  params: undefined |  GetDashboardParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDashboard>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof getDashboard>>,
@@ -3004,7 +3078,7 @@ export function useGetDashboard<TData = Awaited<ReturnType<typeof getDashboard>>
       >, fetch?: RequestInit}
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetDashboard<TData = Awaited<ReturnType<typeof getDashboard>>, TError = UnauthorizedResponse | ForbiddenResponse>(
+export function useGetDashboard<TData = Awaited<ReturnType<typeof getDashboard>>, TError = UnauthorizedResponse | ForbiddenResponse | ValidationErrorResponse>(
  params?: GetDashboardParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDashboard>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof getDashboard>>,
@@ -3014,15 +3088,15 @@ export function useGetDashboard<TData = Awaited<ReturnType<typeof getDashboard>>
       >, fetch?: RequestInit}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetDashboard<TData = Awaited<ReturnType<typeof getDashboard>>, TError = UnauthorizedResponse | ForbiddenResponse>(
+export function useGetDashboard<TData = Awaited<ReturnType<typeof getDashboard>>, TError = UnauthorizedResponse | ForbiddenResponse | ValidationErrorResponse>(
  params?: GetDashboardParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDashboard>>, TError, TData>>, fetch?: RequestInit}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
- * @summary Dashboard aggregates — revenue, bookings, occupancy (OWNER)
+ * @summary Dashboard aggregates — 5-row revenue, bookings, occupancy with DATE_TRUNC + GROUP BY in DB (idx_bookings_start_at)
  */
 
-export function useGetDashboard<TData = Awaited<ReturnType<typeof getDashboard>>, TError = UnauthorizedResponse | ForbiddenResponse>(
+export function useGetDashboard<TData = Awaited<ReturnType<typeof getDashboard>>, TError = UnauthorizedResponse | ForbiddenResponse | ValidationErrorResponse>(
  params?: GetDashboardParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDashboard>>, TError, TData>>, fetch?: RequestInit}
  , queryClient?: QueryClient 
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
