@@ -17,11 +17,11 @@ import (
 
 // Sentinel errors for handler mapping.
 var (
-	ErrInvalidRange     = errors.New("invalid date range")
-	ErrInvalidGran      = errors.New("invalid granularity")
-	ErrInvalidTimezone  = errors.New("invalid timezone")
-	ErrForbidden        = errors.New("forbidden")
-	ErrOrgRequired      = errors.New("organization required")
+	ErrInvalidRange    = errors.New("invalid date range")
+	ErrInvalidGran     = errors.New("invalid granularity")
+	ErrInvalidTimezone = errors.New("invalid timezone")
+	ErrForbidden       = errors.New("forbidden")
+	ErrOrgRequired     = errors.New("organization required")
 )
 
 // Service aggregates dashboard data — all queries use DATE_TRUNC + GROUP BY in DB with index start_at, not JS.
@@ -100,16 +100,16 @@ type TopCustomer struct {
 }
 
 type RecentBooking struct {
-	ID         string  `json:"id"`
-	CustomerName string `json:"customerName"`
+	ID            string `json:"id"`
+	CustomerName  string `json:"customerName"`
 	CustomerEmail string `json:"customerEmail"`
-	ServiceName  string `json:"serviceName"`
-	StaffName    string `json:"staffName"`
-	StartAt      string `json:"startAt"`
-	EndAt        string `json:"endAt"`
-	Status       string `json:"status"`
+	ServiceName   string `json:"serviceName"`
+	StaffName     string `json:"staffName"`
+	StartAt       string `json:"startAt"`
+	EndAt         string `json:"endAt"`
+	Status        string `json:"status"`
 	PaymentStatus string `json:"paymentStatus"`
-	CreatedAt    string `json:"createdAt"`
+	CreatedAt     string `json:"createdAt"`
 }
 
 type Insights struct {

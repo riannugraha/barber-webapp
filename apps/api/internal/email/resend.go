@@ -18,11 +18,11 @@ import (
 // Client is Resend email client — uses https://api.resend.com/emails.
 // When apiKey is empty, it runs in mock mode (logs, no external call) for tests/CI.
 type Client struct {
-	apiKey     string
-	from       string
-	httpClient *http.Client
+	apiKey      string
+	from        string
+	httpClient  *http.Client
 	frontendURL string
-	enabled    bool
+	enabled     bool
 }
 
 // New creates a Client. from defaults to "FlowBook <noreply@flowbook.example.com>" if empty.
@@ -39,7 +39,7 @@ func New(apiKey, from, frontendURL string) *Client {
 		apiKey:      apiKey,
 		from:        from,
 		frontendURL: strings.TrimRight(frontendURL, "/"),
-		httpClient: &http.Client{Timeout: 10 * time.Second},
+		httpClient:  &http.Client{Timeout: 10 * time.Second},
 		enabled:     enabled,
 	}
 }
@@ -68,12 +68,12 @@ type resendAttachment struct {
 }
 
 type resendPayload struct {
-	From        string             `json:"from"`
-	To          []string           `json:"to"`
-	Subject     string             `json:"subject"`
-	HTML        string             `json:"html"`
-	Text        *string            `json:"text,omitempty"`
-	Attachments []resendAttachment `json:"attachments,omitempty"`
+	From        string              `json:"from"`
+	To          []string            `json:"to"`
+	Subject     string              `json:"subject"`
+	HTML        string              `json:"html"`
+	Text        *string             `json:"text,omitempty"`
+	Attachments []resendAttachment  `json:"attachments,omitempty"`
 	Tags        []map[string]string `json:"tags,omitempty"`
 }
 

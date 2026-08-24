@@ -14,6 +14,7 @@ import (
 	"flowbook/api/internal/auth"
 	"flowbook/api/internal/availability"
 	"flowbook/api/internal/bookings"
+	"flowbook/api/internal/chat"
 	"flowbook/api/internal/config"
 	"flowbook/api/internal/dashboard"
 	"flowbook/api/internal/db"
@@ -112,15 +113,18 @@ func main() {
 
 	// WS Hub — gorilla/websocket native (Koyeb, no Pusher) for slot_taken broadcast (T04/T08)
 	wsHub := ws.NewHub()
+	// Start async broadcast loop (Koyeb native WS, no Pusher)
+	go wsHub.Run()
 	wsHandler := ws.NewHandler(wsHub)
 	wsHandler.RegisterRoutes(v1)
-	slog.Info("ws hub registered", "transport", "gorilla/websocket", "path", "/api/v1/ws")
+	slog.Info("ws hub registered", "transport", "gorilla/websocket", "path", "/api/v1/ws", "mode", "Koyeb native, no Pusher")
 
 	// Availability engine — calendar core (T03) cached 30s, pgx pooler 6543, no database/sql
 	var availSvc *availability.Service
+	var availQueries *db.Queries
 	if pool != nil {
-		queries := db.New(pool)
-		availRepo := availability.NewRepository(queries)
+		availQueries = db.New(pool)
+		availRepo := availability.NewRepository(availQueries)
 		availSvc = availability.NewService(availRepo)
 		availHandler := availability.NewHandler(availSvc)
 		availHandler.RegisterRoutes(v1)
@@ -134,9 +138,10 @@ func main() {
 	slog.Info("email client initialized", "enabled", emailClient.Health(), "from", cfg.ResendFromEmail)
 
 	// Bookings Core — T04: POST /bookings validasi via GetSlots, tstzrange, 409 23P01, pagination, cancel/reschedule tx, RBAC, hub.Broadcast
+	var bookingsSvc *bookings.Service
 	if pool != nil {
 		bookingsRepo := bookings.NewRepository(pool)
-		bookingsSvc := bookings.NewService(bookingsRepo, availSvc, wsHub)
+		bookingsSvc = bookings.NewService(bookingsRepo, availSvc, wsHub)
 		// Inject email for free booking (price 0) + cancelled notifications (T05)
 		bookingsSvc.SetEmailSender(emailClient)
 		bookingsHandler := bookings.NewHandler(bookingsSvc)
@@ -171,6 +176,21 @@ func main() {
 		slog.Info("dashboard aggregates registered", "routes", "GET /dashboard?from&to&granularity&tz", "queries", "DATE_TRUNC+GROUP BY with idx_bookings_start_at", "rows", "kpi, revenueSeries 10 titik, pie 35%, bar Andi90/Bayu70/Sari20, heatmap 7x15, topCustomers 15, recent10, insights")
 	} else {
 		slog.Warn("dashboard disabled — no DB pool")
+	}
+
+	// Chat AI Receptionist — T08: POST /chat SSE manual via Echo, proxy openai-go tools checkAvailability -> GetSlots + createBooking -> bookings.Create streaming, no Vercel AI SDK
+	{
+		var chatQueries *db.Queries
+		if pool != nil {
+			if availQueries != nil {
+				chatQueries = availQueries
+			} else {
+				chatQueries = db.New(pool)
+			}
+		}
+		chatHandler := chat.NewHandler(availSvc, bookingsSvc, pool, chatQueries, cfg.OpenAIAPIKey)
+		chatHandler.RegisterRoutes(v1)
+		slog.Info("chat AI receptionist registered", "route", "POST /api/v1/chat", "sse", "text/event-stream manual", "tools", "checkAvailability->GetSlots, createBooking->Create", "proxy", "openai-go")
 	}
 
 	// Test-only helpers — POST /test/reset + /test/seed-full guard APP_ENV=test && x-test-secret==TEST_SECRET (T07)

@@ -213,7 +213,7 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (db.Booking, er
 			Name:           strings.TrimSpace(req.CustomerName),
 			Phone:          toPgText(req.CustomerPhone),
 		})
-			if err == nil {
+		if err == nil {
 			// cust.ID is uuid.UUID ([16]byte), pgtype.UUID expects [16]byte
 			custID = pgtype.UUID{Bytes: [16]byte(cust.ID), Valid: true}
 		} else {

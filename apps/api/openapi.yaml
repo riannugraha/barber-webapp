@@ -25,6 +25,7 @@ tags:
   - name: Payments
   - name: Dashboard
   - name: Realtime
+  - name: Chat
 security: []
 paths:
   /health:
@@ -692,6 +693,75 @@ paths:
       responses:
         '101':
           description: Switching Protocols
+
+  /chat:
+    post:
+      tags: [Chat]
+      summary: AI Receptionist SSE — proxy openai-go with tools checkAvailability/createBooking, streaming text/event-stream manual via Echo (no Vercel AI SDK)
+      operationId: chatStream
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [messages]
+              properties:
+                messages:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required: [role, content]
+                    properties:
+                      role:
+                        type: string
+                        enum: [system, user, assistant, tool]
+                      content:
+                        type: string
+                      tool_call_id:
+                        type: string
+                      name:
+                        type: string
+                orgId:
+                  type: string
+                  format: uuid
+                  description: Organization scope for service/staff resolution
+                tz:
+                  type: string
+                  default: Asia/Jakarta
+                  example: Asia/Jakarta
+                  description: IANA timezone for date interpretation
+                stream:
+                  type: boolean
+                  default: true
+            examples:
+              checkAvailability:
+                summary: Check slots
+                value:
+                  messages: [{role: user, content: "Cek slot Classic Cut untuk 2026-08-24"}]
+                  tz: Asia/Jakarta
+              createBooking:
+                summary: Create booking
+                value:
+                  messages: [{role: user, content: "Buat booking Classic Cut dengan Andi slot 2026-08-24T02:00:00Z untuk Budi budi@example.com"}]
+      responses:
+        '200':
+          description: SSE stream text/event-stream (manual Echo, gorilla/websocket not used here)
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                example: |
+                  data: {"id":"chatcmpl-123","object":"chat.completion.chunk","choices":[{"delta":{"content":"Halo "},"index":0}]}
+
+                  data: {"type":"tool_call","tool":"checkAvailability","args":{"service":"Classic Cut","date":"2026-08-24"}}
+
+                  data: {"type":"tool_result","tool":"checkAvailability","available":5,"preview":["09:00","09:15"]}
+
+                  data: [DONE]
+        '422':
+          $ref: '#/components/responses/ValidationError'
 
   /test/reset:
     post:

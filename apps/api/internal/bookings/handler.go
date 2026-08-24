@@ -573,4 +573,3 @@ func parseDateParam(s string) (time.Time, error) {
 // Ensure bookingResponse serializes pgtype correctly
 var _ = pgtype.Text{}
 var _ = db.Booking{}
-
